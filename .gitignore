@@ -39,3 +39,16 @@
 
 # debug information files
 *.dwo
+
+# Whisper CPP
+whisper.cpp/
+
+# Binary files
+*.opus
+blocklist.txt
+*.wav
+*.flac
+*.m4a
+*.m4b
+*.mp3
+*.mp4
