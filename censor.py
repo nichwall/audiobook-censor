@@ -42,11 +42,25 @@ def parse_json(json_path):
 
 def determine_intervals(words, blocklist, padding=0.03):
     intervals = []
-    for w in words:
-        if w["word"] in blocklist:
-            start = max(0, w["start"] - padding)
-            end = w["end"] + padding
-            intervals.append((start, end))
+    
+    # Build a sequence of word texts for phrase matching
+    word_sequence = [w["word"] for w in words]
+    
+    for i, w in enumerate(words):
+        # Check all phrases in blocklist
+        for phrase in blocklist:
+            phrase_words = phrase.split()
+            phrase_len = len(phrase_words)
+            
+            # Check if phrase matches starting at position i
+            if i + phrase_len <= len(word_sequence):
+                if word_sequence[i:i+phrase_len] == phrase_words:
+                    # Found a match, compute interval from first to last word
+                    start = max(0, words[i]["start"] - padding)
+                    end = words[i + phrase_len - 1]["end"] + padding
+                    intervals.append((start, end))
+                    break  # Don't add multiple intervals for same word
+    
     intervals.sort()
     return intervals
 
