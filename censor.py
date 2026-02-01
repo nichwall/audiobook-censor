@@ -17,7 +17,7 @@ def run(cmd):
     print("→", " ".join(cmd))
     subprocess.run(cmd, check=True)
 
-def load_blocklist(path):
+def load_list(path):
     with open(path, "r", encoding="utf-8") as f:
         return {w.strip().lower() for w in f if w.strip()}
 
@@ -40,13 +40,13 @@ def parse_json(json_path):
     return words
 
 
-def determine_intervals(words, blocklist, padding=0.03):
+def determine_intervals(words, blocklist, whitelist=set(), padding=0.03):
     intervals = []
     
     # Build a sequence of word texts for phrase matching
     word_sequence = [w["word"] for w in words]
     
-    for i, w in enumerate(words):
+    for i, _ in enumerate(words):
         # Check all phrases in blocklist
         for phrase in blocklist:
             phrase_words = phrase.split()
@@ -55,10 +55,12 @@ def determine_intervals(words, blocklist, padding=0.03):
             # Check if phrase matches starting at position i
             if i + phrase_len <= len(word_sequence):
                 if word_sequence[i:i+phrase_len] == phrase_words:
-                    # Found a match, compute interval from first to last word
-                    start = max(0, words[i]["start"] - padding)
-                    end = words[i + phrase_len - 1]["end"] + padding
-                    intervals.append((start, end))
+                    # Check whitelist first (has priority)
+                    if phrase not in whitelist:
+                        # Found a match, compute interval from first to last word
+                        start = max(0, words[i]["start"] - padding)
+                        end = words[i + phrase_len - 1]["end"] + padding
+                        intervals.append((start, end))
                     break  # Don't add multiple intervals for same word
     
     intervals.sort()
@@ -250,7 +252,8 @@ def main():
     words = parse_json(transcript)
 
     # Third, figure out the when to mute based on the timestamps from gentle
-    blocklist = load_blocklist(blocklist_file)
+    blocklist = load_list(blocklist_file)
+    whitelist = load_list("allowlist.txt")
 
     # Compute mute intervals
     intervals = merge_intervals(determine_intervals(words, blocklist))
