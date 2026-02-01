@@ -40,13 +40,11 @@ def parse_json(json_path):
     return words
 
 
-def determine_intervals(words, blocklist, whitelist=[], padding=0.03):
+def determine_intervals(words, blocklist, padding=0.03):
     intervals = []
     
     # Build a sequence of word texts for phrase matching
     word_sequence = [w["word"] for w in words]
-    whitelist = [w.lower().split() for w in whitelist]
-    print(f"Whitelist: {whitelist}")
     
     for i, _ in enumerate(words):
         # Check all phrases in blocklist
@@ -60,17 +58,29 @@ def determine_intervals(words, blocklist, whitelist=[], padding=0.03):
                 after_words = word_sequence[i+phrase_len:i+phrase_len+3] if i + phrase_len + 3 <= len(word_sequence) else word_sequence[i+phrase_len:len(word_sequence)]
 
                 if word_sequence[i:i+phrase_len] == phrase_words:
-                    # Check whitelist first (has priority)
-                    print(f"Found potential match for phrase '{phrase_words}' at position {i}")
-                    if phrase not in whitelist:
-                        # Found a match, compute interval from first to last word
-                        start = max(0, words[i]["start"] - padding)
-                        end = words[i + phrase_len - 1]["end"] + padding
-                        intervals.append((start, end, phrase_words, previous_words, after_words))
+                    # Found a match, compute interval from first to last word
+                    start = max(0, words[i]["start"] - padding)
+                    end = words[i + phrase_len - 1]["end"] + padding
+                    intervals.append((start, end, phrase_words, previous_words, after_words))
                     break  # Don't add multiple intervals for same word
     
     intervals.sort()
     return intervals
+
+def apply_whitelist(blocked_intervals, allowed_intervals):
+    final_intervals = []
+    for b_start, b_end, phrase_words, previous_words, after_words in blocked_intervals:
+        overlap = False
+        for a_start, a_end, a_phrase, a_prev, a_after in allowed_intervals:
+            if not (b_end < a_start or b_start > a_end):
+                overlap = True
+                final_intervals.append((b_start, b_end, True, a_phrase, a_prev, a_after))
+                break
+        
+        if not overlap:
+            final_intervals.append((b_start, b_end, False, phrase_words, previous_words, after_words))
+
+    return final_intervals
 
 def get_audio_duration(filename):
     probe = subprocess.check_output([
@@ -140,15 +150,16 @@ def create_mask_audio(
     pcm_bytes = bytearray(num_samples * sampwidth)
 
     # Fill intervals with tone
-    for start, end, *_ in intervals:
-        s_idx = int(start * sample_rate)
-        e_idx = int(end * sample_rate)
-        e_idx = min(e_idx, num_samples)
+    for start, end, skip, *_ in intervals:
+        if not skip:
+            s_idx = int(start * sample_rate)
+            e_idx = int(end * sample_rate)
+            e_idx = min(e_idx, num_samples)
 
-        for i in range(s_idx, e_idx):
-            t = i / sample_rate
-            value = int(amplitude * math.sin(2 * math.pi * frequency * t))
-            struct.pack_into("<h", pcm_bytes, i * sampwidth, value)
+            for i in range(s_idx, e_idx):
+                t = i / sample_rate
+                value = int(amplitude * math.sin(2 * math.pi * frequency * t))
+                struct.pack_into("<h", pcm_bytes, i * sampwidth, value)
 
     # Write raw PCM to temp file
     with tempfile.NamedTemporaryFile(delete=False, suffix=".raw") as raw:
@@ -252,17 +263,25 @@ def main():
     whitelist = load_list("allowlist.txt")
 
     # Compute mute intervals
-    raw_intervals = determine_intervals(words, blocklist, whitelist)
+    raw_block_intervals = determine_intervals(words, blocklist)
+    raw_allow_intervals = determine_intervals(words, whitelist)
+
+    # Remove any block intervals that overlap with allow intervals
+    final_block_intervals = apply_whitelist(raw_block_intervals, raw_allow_intervals)
 
     print("\nMute intervals:")
-    for s, e, phrase_words, previous_words, after_words in raw_intervals:
+    for s, e, good_phrase, phrase_words, previous_words, after_words in final_block_intervals:
         RED = "\033[91m"
+        GREEN = "\033[92m"
         RESET = "\033[0m"
-        print(f"  {s:.2f} → {e:.2f} : {' '.join(previous_words)} {RED}{' '.join(phrase_words)}{RESET} {' '.join(after_words)}")
+        if good_phrase:
+            print(f"  {s:.2f} → {e:.2f} : {' '.join(previous_words)} {GREEN}{' '.join(phrase_words)}{RESET} {' '.join(after_words)}")
+        else:
+            print(f"  {s:.2f} → {e:.2f} : {' '.join(previous_words)} {RED}{' '.join(phrase_words)}{RESET} {' '.join(after_words)}")
 
     mask_create_start_time = time.time()
     # ️Build mask FLAC
-    create_mask_audio(mask_flac, duration_sec, raw_intervals)
+    create_mask_audio(mask_flac, duration_sec, final_block_intervals)
     mask_create_end_time = time.time()
 
     mask_apply_start_time = time.time()
