@@ -83,59 +83,89 @@ def transcribe(input, output_json):
     return float(probe.strip())
 
 # ---------------------------------------------------------------------
-# Mask creation: generate WAV with tone where profanity occurs
+# Mask creation: generate FLAC with tone where profanity occurs
 # ---------------------------------------------------------------------
 
-def create_mask_wav(mask_path, duration_sec, intervals, sample_rate=16000):
-    print(f"→ Creating mask WAV: {mask_path}")
+def create_mask_audio(
+    mask_flac_path,
+    duration_sec,
+    intervals,
+    sample_rate=8000
+):
+    """
+    Creates a FLAC mask audio file with tone during censor intervals
+    and silence elsewhere.
 
-    # PCM parameters
+    mask_flac_path : output .flac file
+    duration_sec   : total duration of audio
+    intervals      : list of (start, end) tuples in seconds
+    sample_rate    : low rate is fine (default 8 kHz)
+    """
+
+    print(f"→ Creating mask audio (FLAC): {mask_flac_path}")
+
+    import math
+    import tempfile
+    import os
+    import struct
+    import subprocess
+
     channels = 1
     sampwidth = 2  # 16-bit PCM
+    amplitude = 28000
+    frequency = 1000  # Hz
+
     num_samples = int(duration_sec * sample_rate)
+    pcm_bytes = bytearray(num_samples * sampwidth)
 
-    # Tone parameters (this doesn't matter much — it's never heard)
-    amplitude = 30000  # loud enough to trigger compressor
-    frequency = 1000   # 1 kHz tone
+    # Fill intervals with tone
+    for start, end in intervals:
+        s_idx = int(start * sample_rate)
+        e_idx = int(end * sample_rate)
+        e_idx = min(e_idx, num_samples)
 
-    with wave.open(mask_path, "wb") as wf:
-        wf.setnchannels(channels)
-        wf.setsampwidth(sampwidth)
-        wf.setframerate(sample_rate)
+        for i in range(s_idx, e_idx):
+            t = i / sample_rate
+            value = int(amplitude * math.sin(2 * math.pi * frequency * t))
+            struct.pack_into("<h", pcm_bytes, i * sampwidth, value)
 
-        # Create a list for fast writing
-        mask_bytes = bytearray(num_samples * sampwidth)
+    # Write raw PCM to temp file
+    with tempfile.NamedTemporaryFile(delete=False, suffix=".raw") as raw:
+        raw.write(pcm_bytes)
+        raw_path = raw.name
 
-        # Fill intervals with tone
-        import math
-        
-        for start, end in intervals:
-            s_idx = int(start * sample_rate)
-            e_idx = int(end * sample_rate)
-            e_idx = min(e_idx, num_samples)
+    try:
+        # Encode to FLAC
+        subprocess.run([
+            "ffmpeg", "-y",
+            "-hide_banner",
+            "-loglevel", "warning",
+            "-f", "s16le",
+            "-ar", str(sample_rate),
+            "-ac", str(channels),
+            "-i", raw_path,
+            "-c:a", "flac",
+            "-compression_level", "8",
+            mask_flac_path
+        ], check=True)
+    finally:
+        os.remove(raw_path)
 
-            for i in range(s_idx, e_idx):
-                t = i / sample_rate
-                value = int(amplitude * math.sin(2 * math.pi * frequency * t))
-                struct.pack_into("<h", mask_bytes, i * sampwidth, value)
+    print("→ Mask audio created.")
 
-        wf.writeframes(mask_bytes)
-
-    print("→ Mask track created.")
-
-def combine_mask_wav(input_wav, mask_wav, output_wav):
-    print(f"→ Combining {input_wav} and {mask_wav} into {output_wav} with ducking.")
+def apply_audio_mask(input_audio, mask_audio, output_audio):
+    print(f"→ Combining {input_audio} and {mask_audio} into {output_audio} with ducking.")
 
     # Use sidechaincompress to duck the main audio
 
-    # Convert back to opus if original file was opus
-    if (output_wav.lower().endswith(".opus")):
+    # Convert to opus if output file is opus
+    if (output_audio.lower().endswith(".opus")):
         run([
             "ffmpeg", "-y",
             "-hide_banner",
             "-loglevel", "warning",
-            "-i", input_wav,
-            "-i", mask_wav,
+            "-i", input_audio,
+            "-i", mask_audio,
             "-filter_complex",
             "[0:a][1:a]sidechaincompress=threshold=0.001:ratio=20:attack=1:release=3[outa]",
             "-map", "[outa]",
@@ -145,19 +175,19 @@ def combine_mask_wav(input_wav, mask_wav, output_wav):
             "-frame_duration", "60",
             "-application", "voip",
             "-ac", "1",
-            output_wav
+            output_audio
         ])
     else:
         run([
             "ffmpeg", "-y",
             "-hide_banner",
             "-loglevel", "warning",
-            "-i", input_wav,
-            "-i", mask_wav,
+            "-i", input_audio,
+            "-i", mask_audio,
             "-filter_complex",
             "[0:a][1:a]sidechaincompress=threshold=0.001:ratio=20:attack=1:release=3[outa]",
             "-map", "[outa]",
-            output_wav
+            output_audio
         ])
 
     print("→ Combined audio created.")
@@ -175,12 +205,18 @@ def main():
     blocklist_file = sys.argv[2]
     output_dir = sys.argv[3]
 
-    transcript = "timestamps.json"
-    mask_wav = "mask.wav"
-    output_file = os.path.join(output_dir, os.path.basename(input_audio).rsplit(".", 1)[0] + "_censored." + input_audio.rsplit(".", 1)[1])
+    input_audio_basename = os.path.basename(input_audio)
+    input_audio_ext = input_audio_basename.rsplit(".", 1)[1]
 
+    transcript = os.path.join("transcripts", input_audio_basename.rsplit(".", 1)[0] + "_timestamps.json")
+    mask_flac = "mask.flac"
+    #output_file = os.path.join(output_dir, input_audio_basename.rsplit(".", 1)[0] + "_censored." + input_audio_ext)
+    output_file = os.path.join(output_dir, input_audio_basename.rsplit(".", 1)[0] + "_censored." + "opus")
+
+    transcription_start_time = time.time()
     # First transcribe with whisper-cpp
     duration_sec = transcribe(input_audio, transcript)
+    transcription_end_time = time.time()
 
     # Second, parse the JSON output to get word timestamps
     words = parse_json(transcript)
@@ -195,12 +231,24 @@ def main():
     for s, e in intervals:
         print(f"  {s:.2f} → {e:.2f}")
 
-    # ️Build mask WAV
-    create_mask_wav(mask_wav, duration_sec, intervals)
+    mask_create_start_time = time.time()
+    # ️Build mask FLAC
+    create_mask_audio(mask_flac, duration_sec, intervals)
+    mask_create_end_time = time.time()
 
-    combine_mask_wav(input_audio, mask_wav, output_file)
+    mask_apply_start_time = time.time()
+    apply_audio_mask(input_audio, mask_flac, output_file)
+    mask_apply_end_time = time.time()
 
     print("\n🎉 Done! Output saved as:", output_file)
+
+    print("\nTiming Summary:")
+    print(f"  Transcription time:    {transcription_end_time - transcription_start_time:.2f} seconds")
+    print(f"  Mask creation time:    {mask_create_end_time - mask_create_start_time:.2f} seconds")
+    print(f"  Mask application time: {mask_apply_end_time - mask_apply_start_time:.2f} seconds")
+    print()
+    print(f"  Audiobook duration:    {duration_sec:.2f} seconds")
+    print(f"  Total processing time: {mask_apply_end_time - transcription_start_time:.2f} seconds")
 
 
 if __name__ == "__main__":
