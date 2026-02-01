@@ -54,13 +54,16 @@ def determine_intervals(words, blocklist, whitelist=set(), padding=0.03):
             
             # Check if phrase matches starting at position i
             if i + phrase_len <= len(word_sequence):
+                previous_words = word_sequence[i-3:i] if i >= 3 else word_sequence[0:i]
+                after_words = word_sequence[i+phrase_len:i+phrase_len+3] if i + phrase_len + 3 <= len(word_sequence) else word_sequence[i+phrase_len:len(word_sequence)]
+
                 if word_sequence[i:i+phrase_len] == phrase_words:
                     # Check whitelist first (has priority)
                     if phrase not in whitelist:
                         # Found a match, compute interval from first to last word
                         start = max(0, words[i]["start"] - padding)
                         end = words[i + phrase_len - 1]["end"] + padding
-                        intervals.append((start, end))
+                        intervals.append((start, end, phrase_words, previous_words, after_words))
                     break  # Don't add multiple intervals for same word
     
     intervals.sort()
@@ -71,7 +74,7 @@ def merge_intervals(intervals):
         return []
 
     merged = [list(intervals[0])]
-    for start, end in intervals[1:]:
+    for start, end, phrase_words in intervals[1:]:
         if start > merged[-1][1]:
             merged.append([start, end])
         else:
@@ -146,7 +149,7 @@ def create_mask_audio(
     pcm_bytes = bytearray(num_samples * sampwidth)
 
     # Fill intervals with tone
-    for start, end in intervals:
+    for start, end, *_ in intervals:
         s_idx = int(start * sample_rate)
         e_idx = int(end * sample_rate)
         e_idx = min(e_idx, num_samples)
@@ -236,6 +239,8 @@ def main():
     input_audio_ext = input_audio_basename.rsplit(".", 1)[1]
 
     transcript = os.path.join("transcripts", input_audio_basename.rsplit(".", 1)[0] + "_timestamps.json")
+    blocked    = os.path.join("transcripts", input_audio_basename.rsplit(".", 1)[0] + "_blocked.txt")
+
     mask_flac = "mask.flac"
     #output_file = os.path.join(output_dir, input_audio_basename.rsplit(".", 1)[0] + "_censored." + input_audio_ext)
     output_file = os.path.join(output_dir, input_audio_basename.rsplit(".", 1)[0] + "_censored." + "opus")
@@ -256,15 +261,17 @@ def main():
     whitelist = load_list("allowlist.txt")
 
     # Compute mute intervals
-    intervals = merge_intervals(determine_intervals(words, blocklist))
+    raw_intervals = determine_intervals(words, blocklist, whitelist)
 
     print("\nMute intervals:")
-    for s, e in intervals:
-        print(f"  {s:.2f} → {e:.2f}")
+    for s, e, phrase_words, previous_words, after_words in raw_intervals:
+        RED = "\033[91m"
+        RESET = "\033[0m"
+        print(f"  {s:.2f} → {e:.2f} : {' '.join(previous_words)} {RED}{' '.join(phrase_words)}{RESET} {' '.join(after_words)}")
 
     mask_create_start_time = time.time()
     # ️Build mask FLAC
-    create_mask_audio(mask_flac, duration_sec, intervals)
+    create_mask_audio(mask_flac, duration_sec, raw_intervals)
     mask_create_end_time = time.time()
 
     mask_apply_start_time = time.time()
