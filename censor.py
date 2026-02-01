@@ -62,6 +62,15 @@ def merge_intervals(intervals):
             merged[-1][1] = max(merged[-1][1], end)
     return merged
 
+def get_audio_duration(filename):
+    probe = subprocess.check_output([
+        "ffprobe", "-v", "error",
+        "-show_entries", "format=duration",
+        "-of", "default=noprint_wrappers=1:nokey=1",
+        filename
+    ])
+    return float(probe.strip())
+
 def transcribe(input, output_json):
     startTime = time.time()
     print(f"→ Transcribing {input} with vosk...")
@@ -70,17 +79,19 @@ def transcribe(input, output_json):
         "vosk-transcriber", "-i", input, "-t", "json", "-o", output_json
     ])
 
-    # Return the length of the file for creation of silence mask
-    probe = subprocess.check_output([
-        "ffprobe", "-v", "error",
-        "-show_entries", "format=duration",
-        "-of", "default=noprint_wrappers=1:nokey=1",
-        input
-    ])
+    cleanup_transcript(output_json)
 
     print(f"→ Transcription completed in {time.time() - startTime:.2f} seconds.")
 
-    return float(probe.strip())
+
+def cleanup_transcript(filename):
+    import json
+    with open(filename, "r", encoding="utf-8") as f:
+        data = json.load(f)
+
+    data.pop("text", None)
+    with open(filename, "w", encoding="utf-8") as f:
+        json.dump(data, f, indent=1)
 
 # ---------------------------------------------------------------------
 # Mask creation: generate FLAC with tone where profanity occurs
@@ -213,10 +224,13 @@ def main():
     #output_file = os.path.join(output_dir, input_audio_basename.rsplit(".", 1)[0] + "_censored." + input_audio_ext)
     output_file = os.path.join(output_dir, input_audio_basename.rsplit(".", 1)[0] + "_censored." + "opus")
 
+    # Check if transcription file exists before running again (very expensive step that can be reused)
     transcription_start_time = time.time()
-    # First transcribe with whisper-cpp
-    duration_sec = transcribe(input_audio, transcript)
+    if not os.path.exists(transcript):
+        transcribe(input_audio, transcript)
     transcription_end_time = time.time()
+
+    duration_sec = get_audio_duration(input_audio)
 
     # Second, parse the JSON output to get word timestamps
     words = parse_json(transcript)
