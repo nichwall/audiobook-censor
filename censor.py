@@ -40,11 +40,13 @@ def parse_json(json_path):
     return words
 
 
-def determine_intervals(words, blocklist, whitelist=set(), padding=0.03):
+def determine_intervals(words, blocklist, whitelist=[], padding=0.03):
     intervals = []
     
     # Build a sequence of word texts for phrase matching
     word_sequence = [w["word"] for w in words]
+    whitelist = [w.lower().split() for w in whitelist]
+    print(f"Whitelist: {whitelist}")
     
     for i, _ in enumerate(words):
         # Check all phrases in blocklist
@@ -59,6 +61,7 @@ def determine_intervals(words, blocklist, whitelist=set(), padding=0.03):
 
                 if word_sequence[i:i+phrase_len] == phrase_words:
                     # Check whitelist first (has priority)
+                    print(f"Found potential match for phrase '{phrase_words}' at position {i}")
                     if phrase not in whitelist:
                         # Found a match, compute interval from first to last word
                         start = max(0, words[i]["start"] - padding)
@@ -68,18 +71,6 @@ def determine_intervals(words, blocklist, whitelist=set(), padding=0.03):
     
     intervals.sort()
     return intervals
-
-def merge_intervals(intervals):
-    if not intervals:
-        return []
-
-    merged = [list(intervals[0])]
-    for start, end, phrase_words in intervals[1:]:
-        if start > merged[-1][1]:
-            merged.append([start, end])
-        else:
-            merged[-1][1] = max(merged[-1][1], end)
-    return merged
 
 def get_audio_duration(filename):
     probe = subprocess.check_output([
