@@ -37,6 +37,7 @@ class FileStatus(BaseModel):
     transcribed: bool
     censored: bool
     censored_at: Optional[float] = None # Timestamp
+    is_out_of_date: bool = False
 
 class OverrideUpdate(BaseModel):
     start_time: float
@@ -54,6 +55,13 @@ def list_files():
     for ext in extensions:
         audio_files.extend(glob.glob(os.path.join(INPUT_DIR, ext)))
     
+    # Get global config mtimes
+    global_mtime = 0
+    if os.path.exists(GLOBAL_BLOCKLIST):
+        global_mtime = max(global_mtime, os.path.getmtime(GLOBAL_BLOCKLIST))
+    if os.path.exists(GLOBAL_ALLOWLIST):
+        global_mtime = max(global_mtime, os.path.getmtime(GLOBAL_ALLOWLIST))
+
     for fpath in audio_files:
         basename = os.path.basename(fpath)
         base_no_ext = basename.rsplit(".", 1)[0]
@@ -68,13 +76,23 @@ def list_files():
         is_censored = os.path.exists(output_path)
         censored_at = os.path.getmtime(output_path) if is_censored else None
         
-        # Get duration if transcribed (it's inside json? No, censor.py calculates it. 
-        # We can try to read it from transcript if available or run ffprobe if not expensive.
-        # For now, let's leave duration None if calculate is expensive, or read from standard sidecar?)
-        duration = None
-        if is_transcribed:
-             # We could peek into the json to get last word end time as approximation
-             pass
+        # Check overrides
+        overrides_path = os.path.join(TRANSCRIPT_DIR, base_no_ext + "_overrides.json")
+        overrides_mtime = 0
+        if os.path.exists(overrides_path):
+            overrides_mtime = os.path.getmtime(overrides_path)
+            
+        is_out_of_date = False
+        if is_censored:
+            # If configuration changed AFTER censoring
+            last_config_change = max(global_mtime, overrides_mtime)
+            if censored_at < last_config_change:
+                is_out_of_date = True
+
+        try:
+            duration = censor_app.get_audio_duration(fpath)
+        except:
+            duration = None
 
         files.append(FileStatus(
             filename=basename,
@@ -82,7 +100,8 @@ def list_files():
             duration=duration,
             transcribed=is_transcribed,
             censored=is_censored,
-            censored_at=censored_at
+            censored_at=censored_at,
+            is_out_of_date=is_out_of_date
         ))
     
     # Sort by filename
@@ -111,23 +130,17 @@ def get_transcript_for_ui(filename: str):
     if not os.path.exists(transcript_path):
          raise HTTPException(status_code=404, detail="Transcription not found")
          
-    words = censor_app.parse_json(transcript_path)
-    
-    blocklist = censor_app.load_list(GLOBAL_BLOCKLIST)
-    allowlist = censor_app.load_list(GLOBAL_ALLOWLIST)
-    
     # Overrides
     overrides_path = os.path.join(TRANSCRIPT_DIR, base_no_ext + "_overrides.json")
     overrides = {}
     if os.path.exists(overrides_path):
         with open(overrides_path, "r") as f:
             overrides = json.load(f)
-            
+
     # Calculate intervals to know what is blocked
-    # This logic matches censor.py exactly
-    raw_block = censor_app.determine_intervals(words, blocklist)
-    raw_allow = censor_app.determine_intervals(words, allowlist)
-    final_intervals = censor_app.apply_whitelist(raw_block, raw_allow)
+    # This logic matches censor.py exactly and uses caching
+    final_intervals = censor_app.calculate_matches_with_cache(base_no_ext, GLOBAL_BLOCKLIST, GLOBAL_ALLOWLIST)
+    
     final_intervals = censor_app.apply_overrides(final_intervals, overrides)
     
     # We want to map this back to "ranges" for the UI.

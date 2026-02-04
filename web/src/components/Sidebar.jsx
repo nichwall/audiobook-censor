@@ -1,18 +1,9 @@
 import React from 'react';
 
-function Sidebar({ files, selectedFile, onSelectFile, onRefresh }) {
+function Sidebar({ files, selectedFile, onSelectFile }) {
   return (
     <div className="sidebar">
-      <div className="sidebar-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <span>Audio Censor</span>
-        <button 
-          onClick={(e) => { e.stopPropagation(); onRefresh(); }} 
-          title="Refresh List"
-          style={{ background: 'transparent', border: 'none', color: 'inherit', cursor: 'pointer', padding: 0 }}
-        >
-          ↻
-        </button>
-      </div>
+      <div className="sidebar-header">Audio Censor</div>
       <div className="file-list">
         {files.map(file => (
           <div 
@@ -21,16 +12,27 @@ function Sidebar({ files, selectedFile, onSelectFile, onRefresh }) {
             onClick={() => onSelectFile(file)}
           >
             <div className="file-name" title={file.filename}>{file.filename}</div>
-            <div className="file-status">
+            <div className="file-status" style={{display: 'flex', alignItems: 'center', gap: '12px'}}>
                <span style={{color: file.transcribed ? 'var(--success)' : 'var(--text-secondary)'}}>
                  {file.transcribed ? '✓ Transcribed' : '○ Pending'}
                </span>
+               
+               {file.censored ? (
+                   file.is_out_of_date ? (
+                       <span style={{color: 'var(--warning)'}}>
+                         ⚠ Out of Date
+                       </span>
+                   ) : (
+                       <span style={{color: 'var(--accent-secondary)'}}>
+                         ✓ Censored
+                       </span>
+                   )
+               ) : (
+                   <span style={{color: 'var(--text-secondary)', opacity: 0.7}}>
+                     ○ Not Censored
+                   </span>
+               )}
             </div>
-            {file.censored && (
-                <div className="file-status">
-                    <span style={{color: 'var(--accent-secondary)'}}>✓ Censored</span>
-                </div>
-            )}
           </div>
         ))}
       </div>

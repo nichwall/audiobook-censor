@@ -37,17 +37,21 @@ function App() {
   };
 
   return (
-    <div className="app-container">
+    <div className={`app-container ${selectedFile ? 'has-selection' : ''}`}>
       <Sidebar 
         files={files} 
         selectedFile={selectedFile} 
         onSelectFile={handleSelectFile}
-        onRefresh={refreshData}
       />
       
       <div className="main-content">
         {selectedFile ? (
           <>
+            <div className="mobile-header">
+              <button className="btn-back" onClick={() => setSelectedFile(null)}>
+                ← Back
+              </button>
+            </div>
             <div className="tabs-header">
               <button 
                 className={`tab-btn ${activeTab === 'summary' ? 'active' : ''}`}

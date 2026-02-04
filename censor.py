@@ -122,6 +122,51 @@ class AudiobookCensor:
     def transcript_path(self, basename):
          return os.path.join(self.transcript_dir, basename + "_timestamps.json")
 
+    def matches_path(self, basename):
+         return os.path.join(self.transcript_dir, basename + "_matches.json")
+
+    def calculate_matches_with_cache(self, basename_no_ext, blocklist_path, allowlist_path):
+        transcript_path = self.transcript_path(basename_no_ext)
+        matches_path = self.matches_path(basename_no_ext)
+        
+        # Check if cache is valid
+        is_cache_valid = False
+        if os.path.exists(matches_path) and os.path.exists(transcript_path):
+            t_mtime = os.path.getmtime(transcript_path)
+            b_mtime = os.path.getmtime(blocklist_path) if os.path.exists(blocklist_path) else 0
+            a_mtime = os.path.getmtime(allowlist_path) if os.path.exists(allowlist_path) else 0
+            m_mtime = os.path.getmtime(matches_path)
+            
+            if m_mtime > t_mtime and m_mtime > b_mtime and m_mtime > a_mtime:
+                is_cache_valid = True
+                
+        if is_cache_valid:
+            try:
+                with open(matches_path, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+                    return data
+            except:
+                pass # Fallback to recompute
+        
+        # Recompute
+        if not os.path.exists(transcript_path):
+             return []
+
+        words = self.parse_json(transcript_path)
+        blocklist = self.load_list(blocklist_path)
+        whitelist = self.load_list(allowlist_path)
+
+        raw_block = self.determine_intervals(words, blocklist)
+        raw_allow = self.determine_intervals(words, whitelist)
+
+        final_intervals = self.apply_whitelist(raw_block, raw_allow)
+        
+        # Save to cache
+        with open(matches_path, "w", encoding="utf-8") as f:
+            json.dump(final_intervals, f, indent=1)
+            
+        return final_intervals
+
     def transcribe(self, input_path):
         basename = os.path.basename(input_path).rsplit(".", 1)[0]
         output_json = self.transcript_path(basename)
@@ -249,15 +294,8 @@ class AudiobookCensor:
             self.transcribe(input_audio)
         
         duration_sec = self.get_audio_duration(input_audio)
-        words = self.parse_json(transcript)
         
-        blocklist = self.load_list(blocklist_path)
-        whitelist = self.load_list(allowlist_path)
-
-        raw_block_intervals = self.determine_intervals(words, blocklist)
-        raw_allow_intervals = self.determine_intervals(words, whitelist)
-
-        final_intervals = self.apply_whitelist(raw_block_intervals, raw_allow_intervals)
+        final_intervals = self.calculate_matches_with_cache(basename_no_ext, blocklist_path, allowlist_path)
         
         # Apply overrides
         final_intervals = self.apply_overrides(final_intervals, overrides)
