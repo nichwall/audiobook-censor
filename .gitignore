@@ -45,6 +45,7 @@ whisper.cpp/
 
 # Binary files
 *.opus
+allowlist.txt
 blocklist.txt
 *.wav
 *.flac
@@ -52,3 +53,8 @@ blocklist.txt
 *.m4b
 *.mp3
 *.mp4
+
+input/
+transcripts/
+output/
+python_venv/
