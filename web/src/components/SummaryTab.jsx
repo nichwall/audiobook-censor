@@ -37,7 +37,6 @@ function SummaryTab({ file, apiBase, onUpdate }) {
       <h2 style={{marginTop: 0}}>{file.filename}</h2>
       
       <div className="card">
-        <h3>Actions</h3>
         {msg && <div style={{marginBottom: 16, color: 'var(--accent-primary)'}}>{msg}</div>}
         
         <div style={{display: 'flex', gap: 16}}>
