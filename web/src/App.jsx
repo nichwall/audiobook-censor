@@ -4,7 +4,7 @@ import SummaryTab from './components/SummaryTab';
 import ListsTab from './components/ListsTab';
 import FileRulesTab from './components/FileRulesTab';
 
-const API_BASE = "http://localhost:8000/api";
+const API_BASE = "/api";
 
 function App() {
   const [files, setFiles] = useState([]);
