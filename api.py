@@ -154,6 +154,8 @@ def get_transcript_for_ui(filename: str):
             "end": e,
             "is_allowed": is_allowed,
             "phrase": " ".join(phrase),
+            "prefix": " ".join(prev),
+            "suffix": " ".join(after),
             "context": " ".join(prev) + " " + " ".join(phrase) + " " + " ".join(after),
             "original_match": not is_allowed # Initially blocked by blocklist
         })

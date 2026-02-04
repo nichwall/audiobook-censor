@@ -69,8 +69,11 @@ function FileRulesTab({ file, apiBase }) {
             {matches.map((match, idx) => (
                 <div key={idx} className={`rule-item ${match.is_allowed ? 'allowed' : 'blocked'}`}>
                     <div className="rule-text">
-                        <div className="rule-context">
-                            ... {match.context} ...
+                        <div className="rule-context" style={{color: 'var(--text-primary)'}}>
+                            ... {match.prefix} <span style={{
+                                color: match.is_allowed ? 'var(--success)' : 'var(--error)',
+                                fontWeight: 'bold'
+                            }}>{match.phrase}</span> {match.suffix} ...
                         </div>
                         <div style={{fontSize: '0.8em', marginTop: 4, color: 'var(--text-secondary)'}}>
                             {match.is_allowed ? "ALLOWED" : "BLOCKED"} | Time: {match.start.toFixed(2)}s
