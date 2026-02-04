@@ -17,19 +17,51 @@ function App() {
       .then(res => res.json())
       .then(data => {
         setFiles(data);
-        // If we have a selected file, update its data reference
-        if (selectedFile) {
-          const updated = data.find(f => f.filename === selectedFile.filename);
-          if (updated) setSelectedFile(updated);
+        
+        // Check URL param for initial selection or deep link
+        const params = new URLSearchParams(window.location.search);
+        const fileParam = params.get('file');
+        
+        if (fileParam) {
+           const found = data.find(f => f.filename === fileParam);
+           if (found) setSelectedFile(found);
+        } else if (selectedFile) {
+           // Refresh existing selection data
+           const updated = data.find(f => f.filename === selectedFile.filename);
+           if (updated) setSelectedFile(updated);
         }
       })
       .catch(err => console.error(err));
   }, [refreshTrigger]);
 
+  // Handle browser back/forward buttons
+  useEffect(() => {
+      const handlePopState = () => {
+          const params = new URLSearchParams(window.location.search);
+          const fileParam = params.get('file');
+          if (!fileParam) {
+              setSelectedFile(null);
+          } else {
+              const found = files.find(f => f.filename === fileParam);
+              if (found) setSelectedFile(found);
+          }
+      };
+      
+      window.addEventListener('popstate', handlePopState);
+      return () => window.removeEventListener('popstate', handlePopState);
+  }, [files]);
+
   const handleSelectFile = (file) => {
     setSelectedFile(file);
-    // Reset to summary when switching files? Or keep tab?
-    // start with summary if not set
+    const params = new URLSearchParams(window.location.search);
+    params.set('file', file.filename);
+    window.history.pushState({}, '', '?' + params.toString());
+  };
+
+  const handleBack = () => {
+      // Go back in history if we have state, or just clear if not?
+      // If we pushed state, back() goes to list.
+      window.history.back();
   };
 
   const refreshData = () => {
@@ -48,7 +80,7 @@ function App() {
         {selectedFile ? (
           <>
             <div className="mobile-header">
-              <button className="btn-back" onClick={() => setSelectedFile(null)}>
+              <button className="btn-back" onClick={handleBack}>
                 ← Back
               </button>
             </div>
