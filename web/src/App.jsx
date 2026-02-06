@@ -21,14 +21,14 @@ function App() {
         
         // Check URL param for initial selection or deep link
         const params = new URLSearchParams(window.location.search);
-        const fileParam = params.get('file');
+        const fileParam = params.get('file'); // Now this holds the ID
         
         if (fileParam) {
-           const found = data.find(f => f.filename === fileParam);
+           const found = data.find(f => f.id === fileParam);
            if (found) setSelectedFile(found);
         } else if (selectedFile) {
            // Refresh existing selection data
-           const updated = data.find(f => f.filename === selectedFile.filename);
+           const updated = data.find(f => f.id === selectedFile.id);
            if (updated) setSelectedFile(updated);
         }
       })
@@ -43,7 +43,7 @@ function App() {
           if (!fileParam) {
               setSelectedFile(null);
           } else {
-              const found = files.find(f => f.filename === fileParam);
+              const found = files.find(f => f.id === fileParam);
               if (found) setSelectedFile(found);
           }
       };
@@ -55,7 +55,7 @@ function App() {
   const handleSelectFile = (file) => {
     setSelectedFile(file);
     const params = new URLSearchParams(window.location.search);
-    params.set('file', file.filename);
+    params.set('file', file.id);
     window.history.pushState({}, '', '?' + params.toString());
   };
 

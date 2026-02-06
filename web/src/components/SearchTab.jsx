@@ -64,7 +64,7 @@ function SearchTab({ file, apiBase }) {
 
   useEffect(() => {
     if (!file.transcribed) return;
-    fetch(`${apiBase}/files/${encodeURIComponent(file.filename)}/vocabulary`)
+    fetch(`${apiBase}/files/${file.id}/vocabulary`)
       .then(res => res.json())
       .then(data => setVocab(data || []))
       .catch(err => console.error(err));
@@ -75,7 +75,7 @@ function SearchTab({ file, apiBase }) {
     if (!searchQ.trim()) return;
     
     setLoading(true);
-    fetch(`${apiBase}/files/${encodeURIComponent(file.filename)}/search?q=${encodeURIComponent(searchQ)}`)
+    fetch(`${apiBase}/files/${file.id}/search?q=${encodeURIComponent(searchQ)}`)
       .then(res => res.json())
       .then(data => {
         setResults(data || []);

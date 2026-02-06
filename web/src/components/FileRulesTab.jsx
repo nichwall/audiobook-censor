@@ -7,7 +7,7 @@ function FileRulesTab({ file, apiBase }) {
   useEffect(() => {
     if (!file.transcribed) return;
     setLoading(true);
-    fetch(`${apiBase}/files/${encodeURIComponent(file.filename)}/transcript`)
+    fetch(`${apiBase}/files/${file.id}/transcript`)
       .then(res => res.json())
       .then(data => {
         setGroups(data.groups || []);
@@ -36,7 +36,7 @@ function FileRulesTab({ file, apiBase }) {
       }));
 
       // Send to API
-      await fetch(`${apiBase}/files/${encodeURIComponent(file.filename)}/overrides`, {
+      await fetch(`${apiBase}/files/${file.id}/overrides`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -57,7 +57,7 @@ function FileRulesTab({ file, apiBase }) {
       }));
 
       // Send to API
-      await fetch(`${apiBase}/files/${encodeURIComponent(file.filename)}/overrides/bulk`, {
+      await fetch(`${apiBase}/files/${file.id}/overrides/bulk`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({

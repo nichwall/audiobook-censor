@@ -6,6 +6,7 @@ import os
 import glob
 import shutil
 import json
+import uuid
 from typing import List, Dict, Optional
 
 from censor import AudiobookCensor
@@ -27,10 +28,32 @@ OUTPUT_DIR = "output"
 TRANSCRIPT_DIR = "transcripts"
 GLOBAL_BLOCKLIST = "blocklist.txt"
 GLOBAL_ALLOWLIST = "allowlist.txt"
+MAPPING_FILE = "file_mapping.json"
 
 censor_app = AudiobookCensor(INPUT_DIR, OUTPUT_DIR, TRANSCRIPT_DIR)
 
+def load_mapping():
+    if os.path.exists(MAPPING_FILE):
+        with open(MAPPING_FILE, "r") as f:
+            return json.load(f)
+    return {"path_to_id": {}, "id_to_path": {}}
+
+def save_mapping(mapping):
+    with open(MAPPING_FILE, "w") as f:
+        json.dump(mapping, f, indent=2)
+
+def get_file_path(file_id: str, mapping: dict):
+    path = mapping["id_to_path"].get(file_id)
+    if not path:
+        raise HTTPException(status_code=404, detail="Invalid file ID")
+    # Security check: join with INPUT_DIR and ensure it's still inside
+    full_path = os.path.abspath(os.path.join(INPUT_DIR, path))
+    if not full_path.startswith(os.path.abspath(INPUT_DIR)):
+         raise HTTPException(status_code=403, detail="Access denied")
+    return path
+
 class FileStatus(BaseModel):
+    id: str
     filename: str
     size_bytes: int
     duration: Optional[float] = None
@@ -48,6 +71,10 @@ class ListUpdate(BaseModel):
     
 @app.get("/api/files", response_model=List[FileStatus])
 def list_files():
+    mapping = load_mapping()
+    path_to_id = mapping["path_to_id"]
+    id_to_path = mapping["id_to_path"]
+    
     files = []
     # Supporting mp3, opus, flac, wav, m4a
     extensions = ["*.mp3", "*.opus", "*.flac", "*.wav", "*.m4a"]
@@ -55,7 +82,6 @@ def list_files():
     
     # Recursive search
     for ext in extensions:
-        # glob with recursive=True and ** pattern
         pattern = os.path.join(INPUT_DIR, "**", ext)
         audio_files.extend(glob.glob(pattern, recursive=True))
     
@@ -66,10 +92,18 @@ def list_files():
     if os.path.exists(GLOBAL_ALLOWLIST):
         global_mtime = max(global_mtime, os.path.getmtime(GLOBAL_ALLOWLIST))
 
+    updated = False
     for fpath in audio_files:
-        # Get relative path from INPUT_DIR
-        # e.g. "input/subdir/file.mp3" -> "subdir/file.mp3"
         rel_path = os.path.relpath(fpath, INPUT_DIR)
+        
+        # Ensure UUID exists
+        if rel_path not in path_to_id:
+            new_id = str(uuid.uuid4())
+            path_to_id[rel_path] = new_id
+            id_to_path[new_id] = rel_path
+            updated = True
+        
+        file_id = path_to_id[rel_path]
         base_no_ext = rel_path.rsplit(".", 1)[0]
         
         # Check transcript
@@ -89,7 +123,6 @@ def list_files():
             
         is_out_of_date = False
         if is_censored:
-            # If configuration changed AFTER censoring
             last_config_change = max(global_mtime, overrides_mtime)
             if censored_at < last_config_change:
                 is_out_of_date = True
@@ -100,6 +133,7 @@ def list_files():
             duration = None
 
         files.append(FileStatus(
+            id=file_id,
             filename=rel_path,
             size_bytes=os.path.getsize(fpath),
             duration=duration,
@@ -109,23 +143,26 @@ def list_files():
             is_out_of_date=is_out_of_date
         ))
     
-    # Sort by filename
+    if updated:
+        save_mapping(mapping)
+        
     files.sort(key=lambda x: x.filename)
     return files
 
-@app.post("/api/files/{filename:path}/transcribe")
-def transcribe_file(filename: str):
+@app.post("/api/files/{id}/transcribe")
+def transcribe_file(id: str):
+    mapping = load_mapping()
+    filename = get_file_path(id, mapping)
     fpath = os.path.join(INPUT_DIR, filename)
-    if not os.path.exists(fpath):
-        raise HTTPException(status_code=404, detail="File not found")
     
-    # Use relative path (filename) as identifier
     base_no_ext = filename.rsplit(".", 1)[0]
     censor_app.transcribe(fpath, base_no_ext)
     return {"status": "success", "message": "Transcription complete"}
 
-@app.get("/api/files/{filename:path}/transcript")
-def get_transcript_for_ui(filename: str):
+@app.get("/api/files/{id}/transcript")
+def get_transcript_for_ui(id: str):
+    mapping = load_mapping()
+    filename = get_file_path(id, mapping)
     base_no_ext = filename.rsplit(".", 1)[0]
     transcript_path = censor_app.transcript_path(base_no_ext)
     
@@ -180,16 +217,20 @@ def get_transcript_for_ui(filename: str):
         
     return {"groups": groups_list}
 
-@app.get("/api/files/{filename:path}/vocabulary")
-def get_vocabulary(filename: str):
+@app.get("/api/files/{id}/vocabulary")
+def get_vocabulary(id: str):
+    mapping = load_mapping()
+    filename = get_file_path(id, mapping)
     base_no_ext = filename.rsplit(".", 1)[0]
     data = censor_app.calculate_vocab_with_cache(base_no_ext)
     if not data:
          raise HTTPException(status_code=404, detail="Transcription not found")
     return data["vocab"]
 
-@app.get("/api/files/{filename:path}/search")
-def search_words(filename: str, q: str = ""):
+@app.get("/api/files/{id}/search")
+def search_words(id: str, q: str = ""):
+    mapping = load_mapping()
+    filename = get_file_path(id, mapping)
     base_no_ext = filename.rsplit(".", 1)[0]
     data = censor_app.calculate_vocab_with_cache(base_no_ext)
     if not data:
@@ -225,12 +266,10 @@ def search_words(filename: str, q: str = ""):
             
     return results
 
-@app.post("/api/files/{filename:path}/prepare-censor")
-def prepare_censor(filename: str):
-    """
-    Step 1: Just calculate the blocklist matches and ensure they are cached.
-    Fast operation.
-    """
+@app.post("/api/files/{id}/prepare-censor")
+def prepare_censor(id: str):
+    mapping = load_mapping()
+    filename = get_file_path(id, mapping)
     base_no_ext = filename.rsplit(".", 1)[0]
     # Ensure matches are fresh
     censor_app.calculate_matches_with_cache(base_no_ext, GLOBAL_BLOCKLIST, GLOBAL_ALLOWLIST)
@@ -238,16 +277,11 @@ def prepare_censor(filename: str):
     censor_app.calculate_vocab_with_cache(base_no_ext)
     return {"status": "success"}
 
-@app.post("/api/files/{filename:path}/censor")
-def censor_file(filename: str):
-    """
-    Step 2: Generate the censored audio file.
-    Heavy operation.
-    """
+@app.post("/api/files/{id}/censor")
+def censor_file(id: str):
+    mapping = load_mapping()
+    filename = get_file_path(id, mapping)
     fpath = os.path.join(INPUT_DIR, filename)
-    if not os.path.exists(fpath):
-        raise HTTPException(status_code=404, detail="File not found")
-        
     base_no_ext = filename.rsplit(".", 1)[0]
     output_file = os.path.join(OUTPUT_DIR, base_no_ext + "_censored.opus")
     
@@ -267,11 +301,10 @@ def censor_file(filename: str):
     censor_app.generate_censored_audio(fpath, final_intervals, output_file)
     return {"status": "success", "message": "Censoring complete"}
 
-@app.post("/api/files/{filename:path}/overrides/bulk")
-def update_overrides_bulk(filename: str, data: dict):
-    """
-    data: { "overrides": [ { "start_time": float, "allow": bool }, ... ] }
-    """
+@app.post("/api/files/{id}/overrides/bulk")
+def update_overrides_bulk(id: str, data: dict):
+    mapping = load_mapping()
+    filename = get_file_path(id, mapping)
     base_no_ext = filename.rsplit(".", 1)[0]
     overrides_path = os.path.join(TRANSCRIPT_DIR, base_no_ext + "_overrides.json")
     
@@ -305,8 +338,10 @@ def update_global_config(config: dict = Body(...)):
         write_list_file(GLOBAL_ALLOWLIST, config["allowlist"])
     return {"status": "success"}
 
-@app.post("/api/files/{filename:path}/overrides")
-def update_overrides(filename: str, override: OverrideUpdate):
+@app.post("/api/files/{id}/overrides")
+def update_overrides(id: str, override: OverrideUpdate):
+    mapping = load_mapping()
+    filename = get_file_path(id, mapping)
     base_no_ext = filename.rsplit(".", 1)[0]
     overrides_path = os.path.join(TRANSCRIPT_DIR, base_no_ext + "_overrides.json")
     

@@ -14,11 +14,11 @@ function SummaryTab({ file, apiBase, onUpdate }) {
     setMsg("Starting full workflow...");
     try {
       setMsg("Step 1/3: Transcribing...");
-      await fetch(`${apiBase}/files/${file.filename}/transcribe`, { method: 'POST' });
+      await fetch(`${apiBase}/files/${file.id}/transcribe`, { method: 'POST' });
       setMsg("Step 2/3: Preparing matches...");
-      await fetch(`${apiBase}/files/${file.filename}/prepare-censor`, { method: 'POST' });
+      await fetch(`${apiBase}/files/${file.id}/prepare-censor`, { method: 'POST' });
       setMsg("Step 3/3: Censoring...");
-      await fetch(`${apiBase}/files/${file.filename}/censor`, { method: 'POST' });
+      await fetch(`${apiBase}/files/${file.id}/censor`, { method: 'POST' });
       setMsg("Full workflow complete!");
       onUpdate();
     } catch (e) {
@@ -32,7 +32,7 @@ function SummaryTab({ file, apiBase, onUpdate }) {
     setLoading(true);
     setMsg("Updating matches...");
     try {
-        await fetch(`${apiBase}/files/${file.filename}/prepare-censor`, { method: 'POST' });
+        await fetch(`${apiBase}/files/${file.id}/prepare-censor`, { method: 'POST' });
         setMsg("Matches updated!");
         onUpdate();
     } catch (e) {
@@ -51,7 +51,7 @@ function SummaryTab({ file, apiBase, onUpdate }) {
     setLoading(true);
     setMsg("Censoring...");
     try {
-        await fetch(`${apiBase}/files/${file.filename}/censor`, { method: 'POST' });
+        await fetch(`${apiBase}/files/${file.id}/censor`, { method: 'POST' });
         setMsg("Censoring complete!");
         onUpdate();
     } catch (e) {
@@ -70,7 +70,7 @@ function SummaryTab({ file, apiBase, onUpdate }) {
     setLoading(true);
     setMsg("Transcribing... This may take a while.");
     try {
-      await fetch(`${apiBase}/files/${file.filename}/transcribe`, { method: 'POST' });
+      await fetch(`${apiBase}/files/${file.id}/transcribe`, { method: 'POST' });
       setMsg("Transcription complete!");
       onUpdate();
     } catch (e) {
