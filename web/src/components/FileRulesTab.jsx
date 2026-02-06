@@ -46,6 +46,26 @@ function FileRulesTab({ file, apiBase }) {
       });
   };
 
+  const toggleGroupOverride = async (group, newAllowedState) => {
+      // Optimistic update
+      setGroups(prevGroups => prevGroups.map(g => {
+          if (g.phrase !== group.phrase) return g;
+          return {
+              ...g,
+              matches: g.matches.map(m => ({ ...m, is_allowed: newAllowedState }))
+          };
+      }));
+
+      // Send to API
+      await fetch(`${apiBase}/files/${encodeURIComponent(file.filename)}/overrides/bulk`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+              overrides: group.matches.map(m => ({ start_time: m.start, allow: newAllowedState }))
+          })
+      });
+  };
+
   if (!file.transcribed) {
       return (
           <div className="card">
@@ -62,13 +82,28 @@ function FileRulesTab({ file, apiBase }) {
         <h2>File Rules</h2>
         <div className="rules-list">
             {groups.length === 0 && <p>No rules found.</p>}
-            {groups.map((group) => (
-                <details key={group.phrase} className="rule-group">
-                    <summary className="rule-group-summary">
-                        <span className="group-phrase">"{group.phrase}"</span>
-                        <span className="group-count">{group.count} instances</span>
-                    </summary>
-                    <div className="rule-group-content">
+            {groups.map((group) => {
+                const allAllowed = group.matches.every(m => m.is_allowed);
+                return (
+                    <details key={group.phrase} className="rule-group">
+                        <summary className="rule-group-summary" style={{display: 'flex', alignItems: 'center', gap: 16}}>
+                            <span className="group-phrase" style={{flex: 1}}>"{group.phrase}"</span>
+                            <span className="group-count" style={{color: 'var(--text-secondary)', fontSize: '0.9em', whiteSpace: 'nowrap'}}>
+                                {group.count} instances
+                            </span>
+                            <div style={{display: 'flex', alignItems: 'center', gap: 8}} onClick={(e) => e.stopPropagation()}>
+                                <span style={{fontSize: '0.7em', fontWeight: 'bold', color: 'var(--text-secondary)'}}>ALL</span>
+                                <label className="toggle-switch small">
+                                    <input 
+                                        type="checkbox" 
+                                        checked={allAllowed}
+                                        onChange={(e) => toggleGroupOverride(group, e.target.checked)}
+                                    />
+                                    <span className="slider"></span>
+                                </label>
+                            </div>
+                        </summary>
+                        <div className="rule-group-content">
                         {group.matches.map((match, idx) => (
                             <div key={idx} className={`rule-item ${match.is_allowed ? 'allowed' : 'blocked'}`}>
                                 <div className="rule-text">
@@ -93,8 +128,9 @@ function FileRulesTab({ file, apiBase }) {
                             </div>
                         ))}
                     </div>
-                </details>
-            ))}
+                    </details>
+                );
+            })}
         </div>
     </div>
   );

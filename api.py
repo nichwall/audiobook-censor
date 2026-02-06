@@ -265,6 +265,27 @@ def censor_file(filename: str):
     censor_app.generate_censored_audio(fpath, final_intervals, output_file)
     return {"status": "success", "message": "Censoring complete"}
 
+@app.post("/api/files/{filename}/overrides/bulk")
+def update_overrides_bulk(filename: str, data: dict):
+    """
+    data: { "overrides": [ { "start_time": float, "allow": bool }, ... ] }
+    """
+    base_no_ext = filename.rsplit(".", 1)[0]
+    overrides_path = os.path.join(TRANSCRIPT_DIR, base_no_ext + "_overrides.json")
+    
+    overrides = {}
+    if os.path.exists(overrides_path):
+        with open(overrides_path, "r") as f:
+            overrides = json.load(f)
+            
+    for item in data.get("overrides", []):
+        overrides[str(item["start_time"])] = item["allow"]
+        
+    with open(overrides_path, "w") as f:
+        json.dump(overrides, f)
+        
+    return {"status": "success"}
+
 @app.get("/api/config/global")
 def get_global_config():
     return {
