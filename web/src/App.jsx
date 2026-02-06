@@ -3,6 +3,7 @@ import Sidebar from './components/Sidebar';
 import SummaryTab from './components/SummaryTab';
 import ListsTab from './components/ListsTab';
 import FileRulesTab from './components/FileRulesTab';
+import SearchTab from './components/SearchTab';
 
 const API_BASE = "/api";
 
@@ -103,6 +104,12 @@ function App() {
               >
                 File Rules
               </button>
+              <button 
+                className={`tab-btn ${activeTab === 'search' ? 'active' : ''}`}
+                onClick={() => setActiveTab('search')}
+              >
+                Word Search
+              </button>
             </div>
 
             <div className="tab-content">
@@ -120,6 +127,12 @@ function App() {
               )}
               {activeTab === 'rules' && (
                 <FileRulesTab 
+                  file={selectedFile}
+                  apiBase={API_BASE}
+                />
+              )}
+              {activeTab === 'search' && (
+                <SearchTab 
                   file={selectedFile}
                   apiBase={API_BASE}
                 />

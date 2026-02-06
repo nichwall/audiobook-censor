@@ -178,6 +178,51 @@ def get_transcript_for_ui(filename: str):
         
     return {"groups": groups_list}
 
+@app.get("/api/files/{filename}/vocabulary")
+def get_vocabulary(filename: str):
+    base_no_ext = filename.rsplit(".", 1)[0]
+    data = censor_app.calculate_vocab_with_cache(base_no_ext)
+    if not data:
+         raise HTTPException(status_code=404, detail="Transcription not found")
+    return data["vocab"]
+
+@app.get("/api/files/{filename}/search")
+def search_words(filename: str, q: str = ""):
+    base_no_ext = filename.rsplit(".", 1)[0]
+    data = censor_app.calculate_vocab_with_cache(base_no_ext)
+    if not data:
+         raise HTTPException(status_code=404, detail="Transcription not found")
+         
+    q = q.strip().lower()
+    if not q:
+        return []
+        
+    index = data["index"]
+    words_list = data["words"]
+    
+    if q not in index:
+        return []
+        
+    results = []
+    for i in index[q]:
+        w = words_list[i]
+        # Context extraction
+        prefix = words_list[i-1]["word"] if i > 0 else ""
+        suffix = []
+        if i + 1 < len(words_list):
+            suffix.append(words_list[i+1]["word"])
+        if i + 2 < len(words_list):
+            suffix.append(words_list[i+2]["word"])
+            
+        results.append({
+            "start": w["start"],
+            "word": w["word"],
+            "prefix": prefix,
+            "suffix": " ".join(suffix)
+        })
+            
+    return results
+
 @app.post("/api/files/{filename}/censor")
 def censor_file(filename: str):
     fpath = os.path.join(INPUT_DIR, filename)

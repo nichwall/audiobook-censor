@@ -125,6 +125,51 @@ class AudiobookCensor:
     def matches_path(self, basename):
          return os.path.join(self.transcript_dir, basename + "_matches.json")
 
+    def vocab_path(self, basename):
+         return os.path.join(self.transcript_dir, basename + "_vocab.json")
+
+    def calculate_vocab_with_cache(self, basename_no_ext):
+        transcript_path = self.transcript_path(basename_no_ext)
+        vocab_path = self.vocab_path(basename_no_ext)
+        
+        if not os.path.exists(transcript_path):
+            return None
+
+        # Check if cache is valid
+        if os.path.exists(vocab_path):
+            if os.path.getmtime(vocab_path) > os.path.getmtime(transcript_path):
+                try:
+                    with open(vocab_path, "r", encoding="utf-8") as f:
+                        return json.load(f)
+                except:
+                    pass
+        
+        # Recompute
+        words = self.parse_json(transcript_path)
+        counts = {}
+        index = {}
+        
+        for i, w in enumerate(words):
+            text = w["word"]
+            counts[text] = counts.get(text, 0) + 1
+            if text not in index:
+                index[text] = []
+            index[text].append(i)
+            
+        vocab_list = [{"word": word, "count": count} for word, count in counts.items()]
+        vocab_list.sort(key=lambda x: x["count"], reverse=True)
+        
+        data = {
+            "vocab": vocab_list,
+            "words": words,
+            "index": index
+        }
+        
+        with open(vocab_path, "w", encoding="utf-8") as f:
+            json.dump(data, f) # No indent to keep file size smaller
+            
+        return data
+
     def calculate_matches_with_cache(self, basename_no_ext, blocklist_path, allowlist_path):
         transcript_path = self.transcript_path(basename_no_ext)
         matches_path = self.matches_path(basename_no_ext)

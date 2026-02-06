@@ -11,8 +11,8 @@
   --success: #10b981;
   --error: #ef4444;
   --warning: #f59e0b;
-  
-  --font-sans: 'Inter', system-ui, -apple-system, sans-serif;
+
+  --font-sans: "Inter", system-ui, -apple-system, sans-serif;
 }
 
 body {
@@ -28,14 +28,14 @@ body {
   height: 8px;
 }
 ::-webkit-scrollbar-track {
-  background: var(--bg-primary); 
+  background: var(--bg-primary);
 }
 ::-webkit-scrollbar-thumb {
-  background: var(--bg-tertiary); 
+  background: var(--bg-tertiary);
   border-radius: 4px;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: var(--text-secondary); 
+  background: var(--text-secondary);
 }
 
 .app-container {
@@ -58,7 +58,11 @@ body {
   font-size: 1.25rem;
   font-weight: 700;
   border-bottom: 1px solid var(--border-color);
-  background: linear-gradient(135deg, var(--accent-primary), var(--accent-secondary));
+  background: linear-gradient(
+    135deg,
+    var(--accent-primary),
+    var(--accent-secondary)
+  );
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
 }
@@ -130,7 +134,7 @@ body {
 
 .tab-btn:hover {
   color: var(--text-primary);
-  background-color: rgba(255,255,255,0.02);
+  background-color: rgba(255, 255, 255, 0.02);
 }
 
 .tab-btn.active {
@@ -178,7 +182,9 @@ body {
   border: none;
   font-weight: 600;
   cursor: pointer;
-  transition: transform 0.1s, opacity 0.2s;
+  transition:
+    transform 0.1s,
+    opacity 0.2s;
 }
 
 .btn:active {
@@ -186,7 +192,11 @@ body {
 }
 
 .btn-primary {
-  background: linear-gradient(135deg, var(--accent-primary), var(--accent-secondary));
+  background: linear-gradient(
+    135deg,
+    var(--accent-primary),
+    var(--accent-secondary)
+  );
   color: white;
 }
 
@@ -284,9 +294,12 @@ textarea.list-editor {
 .slider {
   position: absolute;
   cursor: pointer;
-  top: 0; left: 0; right: 0; bottom: 0;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
   background-color: var(--error);
-  transition: .4s;
+  transition: 0.4s;
   border-radius: 24px;
 }
 
@@ -298,7 +311,7 @@ textarea.list-editor {
   left: 4px;
   bottom: 4px;
   background-color: white;
-  transition: .4s;
+  transition: 0.4s;
   border-radius: 50%;
 }
 
@@ -316,21 +329,21 @@ input:checked + .slider:before {
     width: 100%;
     flex: 1;
   }
-  
+
   .app-container .main-content {
     display: none;
   }
-  
+
   /* When a file is selected (has-selection class) */
   .app-container.has-selection .sidebar {
     display: none;
   }
-  
+
   .app-container.has-selection .main-content {
     display: flex;
     width: 100%;
   }
-  
+
   .mobile-header {
     display: block;
   }
@@ -338,4 +351,9 @@ input:checked + .slider:before {
   .stat-grid {
     grid-template-columns: 1fr; /* Stack stats on mobile */
   }
+}
+
+.vocab-item:hover {
+  background-color: var(--bg-tertiary) !important;
+  color: var(--accent-primary);
 }
