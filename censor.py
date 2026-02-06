@@ -176,6 +176,7 @@ class AudiobookCensor:
             "index": index
         }
         
+        os.makedirs(os.path.dirname(vocab_path), exist_ok=True)
         with open(vocab_path, "w", encoding="utf-8") as f:
             json.dump(data, f) # No indent to keep file size smaller
             
@@ -218,14 +219,18 @@ class AudiobookCensor:
         final_intervals = self.apply_whitelist(raw_block, raw_allow)
         
         # Save to cache
+        os.makedirs(os.path.dirname(matches_path), exist_ok=True)
         with open(matches_path, "w", encoding="utf-8") as f:
             json.dump(final_intervals, f, indent=1)
             
         return final_intervals
 
-    def transcribe(self, input_path):
-        basename = os.path.basename(input_path).rsplit(".", 1)[0]
+    def transcribe(self, input_path, basename=None):
+        if basename is None:
+            basename = os.path.basename(input_path).rsplit(".", 1)[0]
         output_json = self.transcript_path(basename)
+        
+        os.makedirs(os.path.dirname(output_json), exist_ok=True)
         
         startTime = time.time()
         print(f"→ Transcribing {input_path} with vosk...")
@@ -339,10 +344,13 @@ class AudiobookCensor:
         Takes prepared intervals (from calculate_matches + overrides) 
         and performs the heavy audio processing.
         """
+        os.makedirs(os.path.dirname(output_file), exist_ok=True)
         duration_sec = self.get_audio_duration(input_audio)
         # Use a more unique temp name or just mask.flac in the transcript_dir
-        basename = os.path.basename(input_audio).rsplit(".", 1)[0]
+        basename = os.path.relpath(input_audio, self.input_dir).rsplit(".", 1)[0]
         mask_flac = os.path.join(self.transcript_dir, f"{basename}_mask.flac")
+        
+        os.makedirs(os.path.dirname(mask_flac), exist_ok=True)
 
         try:
             self.create_mask_audio(mask_flac, duration_sec, final_intervals)
