@@ -240,29 +240,50 @@ def search_words(id: str, q: str = ""):
     if not q:
         return []
         
+    query_words = q.split()
+    if not query_words:
+        return []
+        
     index = data["index"]
     words_list = data["words"]
     
-    if q not in index:
+    first_word = query_words[0]
+    if first_word not in index:
         return []
         
     results = []
-    for i in index[q]:
-        w = words_list[i]
-        # Context extraction
-        prefix = words_list[i-1]["word"] if i > 0 else ""
-        suffix = []
-        if i + 1 < len(words_list):
-            suffix.append(words_list[i+1]["word"])
-        if i + 2 < len(words_list):
-            suffix.append(words_list[i+2]["word"])
+    for start_idx in index[first_word]:
+        # Check if the whole phrase matches
+        if start_idx + len(query_words) > len(words_list):
+            continue
             
-        results.append({
-            "start": w["start"],
-            "word": w["word"],
-            "prefix": prefix,
-            "suffix": " ".join(suffix)
-        })
+        match = True
+        for i in range(1, len(query_words)):
+            if words_list[start_idx + i]["word"] != query_words[i]:
+                match = False
+                break
+        
+        if match:
+            # Context extraction
+            prefix_words = []
+            if start_idx > 1:
+                prefix_words.append(words_list[start_idx-2]["word"])
+            if start_idx > 0:
+                prefix_words.append(words_list[start_idx-1]["word"])
+            
+            suffix_words = []
+            last_idx = start_idx + len(query_words) - 1
+            if last_idx + 1 < len(words_list):
+                suffix_words.append(words_list[last_idx+1]["word"])
+            if last_idx + 2 < len(words_list):
+                suffix_words.append(words_list[last_idx+2]["word"])
+                
+            results.append({
+                "start": words_list[start_idx]["start"],
+                "word": " ".join(query_words),
+                "prefix": " ".join(prefix_words),
+                "suffix": " ".join(suffix_words)
+            })
             
     return results
 
