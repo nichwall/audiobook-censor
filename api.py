@@ -223,23 +223,46 @@ def search_words(filename: str, q: str = ""):
             
     return results
 
+@app.post("/api/files/{filename}/prepare-censor")
+def prepare_censor(filename: str):
+    """
+    Step 1: Just calculate the blocklist matches and ensure they are cached.
+    Fast operation.
+    """
+    base_no_ext = filename.rsplit(".", 1)[0]
+    # Ensure matches are fresh
+    censor_app.calculate_matches_with_cache(base_no_ext, GLOBAL_BLOCKLIST, GLOBAL_ALLOWLIST)
+    # Also trigger vocabulary cache update for Search tab
+    censor_app.calculate_vocab_with_cache(base_no_ext)
+    return {"status": "success"}
+
 @app.post("/api/files/{filename}/censor")
 def censor_file(filename: str):
+    """
+    Step 2: Generate the censored audio file.
+    Heavy operation.
+    """
     fpath = os.path.join(INPUT_DIR, filename)
     if not os.path.exists(fpath):
         raise HTTPException(status_code=404, detail="File not found")
         
     base_no_ext = filename.rsplit(".", 1)[0]
+    output_file = os.path.join(OUTPUT_DIR, base_no_ext + "_censored.opus")
+    
     overrides_path = os.path.join(TRANSCRIPT_DIR, base_no_ext + "_overrides.json")
     overrides = {}
     if os.path.exists(overrides_path):
         with open(overrides_path, "r") as f:
             overrides = json.load(f)
 
-    # Clean overrides keys to strict strings? JSON load does that.
-    # The censor function expects start time as key (which we fuzzy match? No we fuzzy match in updated code).
+    # 1. Get prepared matches (uses cache)
+    final_intervals = censor_app.calculate_matches_with_cache(base_no_ext, GLOBAL_BLOCKLIST, GLOBAL_ALLOWLIST)
     
-    censor_app.censor(fpath, GLOBAL_BLOCKLIST, GLOBAL_ALLOWLIST, overrides)
+    # 2. Apply current overrides
+    final_intervals = censor_app.apply_overrides(final_intervals, overrides)
+    
+    # 3. Generate audio
+    censor_app.generate_censored_audio(fpath, final_intervals, output_file)
     return {"status": "success", "message": "Censoring complete"}
 
 @app.get("/api/config/global")

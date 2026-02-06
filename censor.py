@@ -55,23 +55,34 @@ class AudiobookCensor:
         # Build a sequence of word texts for phrase matching
         word_sequence = [w["word"] for w in words]
         
-        for i, _ in enumerate(words):
-            # Check all phrases in blocklist
-            for phrase in blocklist:
-                phrase_words = phrase.split()
-                phrase_len = len(phrase_words)
-                
-                # Check if phrase matches starting at position i
-                if i + phrase_len <= len(word_sequence):
-                    previous_words = word_sequence[i-3:i] if i >= 3 else word_sequence[0:i]
-                    after_words = word_sequence[i+phrase_len:i+phrase_len+3] if i + phrase_len + 3 <= len(word_sequence) else word_sequence[i+phrase_len:len(word_sequence)]
+        # Optimize blocklist lookup: index by the first word of the phrase
+        block_by_first = {}
+        for phrase in blocklist:
+            pw = phrase.split()
+            if not pw: continue
+            first = pw[0]
+            if first not in block_by_first:
+                block_by_first[first] = []
+            block_by_first[first].append(pw)
 
-                    if word_sequence[i:i+phrase_len] == phrase_words:
-                        # Found a match, compute interval from first to last word
-                        start = max(0, words[i]["start"] - padding)
-                        end = words[i + phrase_len - 1]["end"] + padding
-                        intervals.append((start, end, phrase_words, previous_words, after_words))
-                        break  # Don't add multiple intervals for same word
+        for i, w in enumerate(words):
+            text = w["word"]
+            if text in block_by_first:
+                # Check all phrases starting with this word
+                for phrase_words in block_by_first[text]:
+                    phrase_len = len(phrase_words)
+                    
+                    # Check if phrase matches starting at position i
+                    if i + phrase_len <= len(word_sequence):
+                        if word_sequence[i:i+phrase_len] == phrase_words:
+                            # Found a match
+                            previous_words = word_sequence[i-3:i] if i >= 3 else word_sequence[0:i]
+                            after_words = word_sequence[i+phrase_len:i+phrase_len+3] if i + phrase_len + 3 <= len(word_sequence) else word_sequence[i+phrase_len:len(word_sequence)]
+                            
+                            start = max(0, words[i]["start"] - padding)
+                            end = words[i + phrase_len - 1]["end"] + padding
+                            intervals.append((start, end, phrase_words, previous_words, after_words))
+                            # removed 'break' to allow multiple matches (e.g. "ass" and "ass hole")
         
         intervals.sort()
         return intervals
@@ -323,6 +334,25 @@ class AudiobookCensor:
 
         print("→ Combined audio created.")
 
+    def generate_censored_audio(self, input_audio, final_intervals, output_file):
+        """
+        Takes prepared intervals (from calculate_matches + overrides) 
+        and performs the heavy audio processing.
+        """
+        duration_sec = self.get_audio_duration(input_audio)
+        # Use a more unique temp name or just mask.flac in the transcript_dir
+        basename = os.path.basename(input_audio).rsplit(".", 1)[0]
+        mask_flac = os.path.join(self.transcript_dir, f"{basename}_mask.flac")
+
+        try:
+            self.create_mask_audio(mask_flac, duration_sec, final_intervals)
+            self.apply_audio_mask(input_audio, mask_flac, output_file)
+        finally:
+            if os.path.exists(mask_flac):
+                os.remove(mask_flac)
+        
+        return output_file
+
     def censor(self, input_audio, blocklist_path, allowlist_path="allowlist.txt", overrides=None):
         if overrides is None:
             overrides = {}
@@ -332,21 +362,18 @@ class AudiobookCensor:
         
         transcript = self.transcript_path(basename_no_ext)
         output_file = os.path.join(self.output_dir, basename_no_ext + "_censored.opus")
-        mask_flac = "mask.flac" # Keep temporary mask in current dir or move to temp
 
         # Check for transcript
         if not os.path.exists(transcript):
             self.transcribe(input_audio)
         
-        duration_sec = self.get_audio_duration(input_audio)
-        
+        # Step 1: Prep matches
         final_intervals = self.calculate_matches_with_cache(basename_no_ext, blocklist_path, allowlist_path)
-        
-        # Apply overrides
         final_intervals = self.apply_overrides(final_intervals, overrides)
 
         print("\nMute intervals:")
         for s, e, is_good, phrase_words, previous_words, after_words in final_intervals:
+            # ... identical print logic ...
             RED = "\033[91m"
             GREEN = "\033[92m"
             RESET = "\033[0m"
@@ -355,13 +382,8 @@ class AudiobookCensor:
             else:
                 print(f"  {s:.2f} → {e:.2f} : {' '.join(previous_words)} {RED}{' '.join(phrase_words)}{RESET} {' '.join(after_words)}")
 
-        self.create_mask_audio(mask_flac, duration_sec, final_intervals)
-        self.apply_audio_mask(input_audio, mask_flac, output_file)
-        
-        if os.path.exists(mask_flac):
-            os.remove(mask_flac)
-            
-        return output_file
+        # Step 2: Generate audio
+        return self.generate_censored_audio(input_audio, final_intervals, output_file)
 
 
 # ---------------------------------------------------------------------

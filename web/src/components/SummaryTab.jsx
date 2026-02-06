@@ -18,12 +18,26 @@ function SummaryTab({ file, apiBase, onUpdate }) {
     }
   };
 
+  const handlePrepare = async () => {
+    setLoading(true);
+    setMsg("Updating matches...");
+    try {
+        await fetch(`${apiBase}/files/${file.filename}/prepare-censor`, { method: 'POST' });
+        setMsg("Matches updated! You can review them in 'File Rules' or 'Word Search'.");
+        onUpdate();
+    } catch (e) {
+        setMsg("Error updating matches: " + e.message);
+    } finally {
+        setLoading(false);
+    }
+  };
+
   const handleCensor = async () => {
     setLoading(true);
-    setMsg("Censoring...");
+    setMsg("Censoring... This takes a few minutes for long files.");
     try {
         await fetch(`${apiBase}/files/${file.filename}/censor`, { method: 'POST' });
-        setMsg("Censoring complete!");
+        setMsg("Censoring complete! Output file is in the 'output' directory.");
         onUpdate();
     } catch (e) {
         setMsg("Error censoring: " + e.message);
@@ -39,7 +53,7 @@ function SummaryTab({ file, apiBase, onUpdate }) {
       <div className="card">
         {msg && <div style={{marginBottom: 16, color: 'var(--accent-primary)'}}>{msg}</div>}
         
-        <div style={{display: 'flex', gap: 16}}>
+        <div style={{display: 'flex', gap: 16, flexWrap: 'wrap'}}>
           {!file.transcribed && (
             <button 
                 className="btn btn-primary" 
@@ -51,12 +65,21 @@ function SummaryTab({ file, apiBase, onUpdate }) {
           )}
           
           <button 
+            className="btn btn-secondary"
+            onClick={handlePrepare}
+            disabled={loading || !file.transcribed}
+            title="Update matches from blocklist/allowlist (Fast)"
+          >
+            Update Matches
+          </button>
+
+          <button 
             className="btn btn-primary"
             onClick={handleCensor}
             disabled={loading || !file.transcribed}
-            style={{opacity: !file.transcribed ? 0.5 : 1}}
+            title="Generate censored audio file (Slow)"
           >
-            Start Censor
+            Run Censoring
           </button>
         </div>
       </div>

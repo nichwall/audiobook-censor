@@ -29,6 +29,17 @@ function ListsTab({ apiBase }) {
     }
   };
 
+  const handleSort = (type) => {
+    if (type === 'block') {
+      const sorted = blocklist.split('\n').filter(l => l.trim()).sort((a, b) => a.localeCompare(b)).join('\n');
+      setBlocklist(sorted);
+    } else {
+      const sorted = allowlist.split('\n').filter(l => l.trim()).sort((a, b) => a.localeCompare(b)).join('\n');
+      setAllowlist(sorted);
+    }
+  };
+
+
   return (
     <div>
         <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16}}>
@@ -39,7 +50,10 @@ function ListsTab({ apiBase }) {
 
         <div style={{display: 'flex', gap: 24}}>
             <div style={{flex: 1}}>
-                <h3>Blocklist (one phrase per line)</h3>
+                <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8}}>
+                    <h3 style={{margin: 0}}>Blocklist (one phrase per line)</h3>
+                    <button className="btn btn-secondary" style={{padding: '4px 10px', fontSize: '0.8rem'}} onClick={() => handleSort('block')}>Sort A-Z</button>
+                </div>
                 <textarea 
                     className="list-editor" 
                     value={blocklist}
@@ -47,7 +61,10 @@ function ListsTab({ apiBase }) {
                 />
             </div>
             <div style={{flex: 1}}>
-                <h3>Allowlist (exceptions)</h3>
+                <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8}}>
+                    <h3 style={{margin: 0}}>Allowlist (exceptions)</h3>
+                    <button className="btn btn-secondary" style={{padding: '4px 10px', fontSize: '0.8rem'}} onClick={() => handleSort('allow')}>Sort A-Z</button>
+                </div>
                 <textarea 
                     className="list-editor"
                     value={allowlist}
