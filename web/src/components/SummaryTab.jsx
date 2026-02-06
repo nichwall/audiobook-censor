@@ -5,6 +5,11 @@ function SummaryTab({ file, apiBase, onUpdate }) {
   const [msg, setMsg] = useState("");
 
   const handleRunAll = async () => {
+    const est = (file.duration || 0) * (0.08 + 0.03);
+    if (est > 10) {
+      if (!window.confirm(`This full workflow will take approximately ${getTimeStr(est)}. Continue?`)) return;
+    }
+
     setLoading(true);
     setMsg("Starting full workflow...");
     try {
@@ -38,6 +43,11 @@ function SummaryTab({ file, apiBase, onUpdate }) {
   };
 
   const handleCensor = async () => {
+    const est = (file.duration || 0) * 0.03;
+    if (est > 10) {
+      if (!window.confirm(`Censoring will take approximately ${getTimeStr(est)}. Continue?`)) return;
+    }
+
     setLoading(true);
     setMsg("Censoring...");
     try {
@@ -52,6 +62,11 @@ function SummaryTab({ file, apiBase, onUpdate }) {
   };
 
   const handleTranscribe = async () => {
+    const est = (file.duration || 0) * 0.08;
+    if (est > 10) {
+      if (!window.confirm(`Transcription will take approximately ${getTimeStr(est)}. Continue?`)) return;
+    }
+
     setLoading(true);
     setMsg("Transcribing... This may take a while.");
     try {
