@@ -1,26 +1,16 @@
 import React, { useState, useEffect } from 'react';
 
 function FileRulesTab({ file, apiBase }) {
-  const [matches, setMatches] = useState([]);
+  const [groups, setGroups] = useState([]);
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
     if (!file.transcribed) return;
     setLoading(true);
-    fetch(`${apiBase}/files/${file.filename}/transcript`)
+    fetch(`${apiBase}/files/${encodeURIComponent(file.filename)}/transcript`)
       .then(res => res.json())
       .then(data => {
-        // Only show items that are either blocked or have been allowed (i.e. relevant to filtering)
-        // Or should we show EVERYTHING? No, that's too much.
-        // We only care about things that matched the blocklist.
-        // The API returns intervals. Some are is_allowed=True (whitelist match/override) or False (blocked).
-        // Let's filter to show only "interesting" ones?
-        // Actually, the API logic returns intervals. For long audiobooks, this list will be HUGE if we return "silence" intervals. 
-        // Wait, `determine_intervals` in censor.py ONLY returns matches from blocklist.
-        // So `final_intervals` contains overlaps of blocklist vs allowlist.
-        // So everything in `final_intervals` is a match of some sort.
-        // So we can show all of them.
-        setMatches(data.intervals);
+        setGroups(data.groups || []);
         setLoading(false);
       })
       .catch(err => {
@@ -31,16 +21,22 @@ function FileRulesTab({ file, apiBase }) {
 
   const toggleOverride = async (match, newAllowedState) => {
       // Optimistic update
-      const newMatches = matches.map(m => {
-          if (m.start === match.start) {
-              return { ...m, is_allowed: newAllowedState };
-          }
-          return m;
-      });
-      setMatches(newMatches);
+      setGroups(prevGroups => prevGroups.map(group => {
+          if (group.phrase !== match.phrase) return group;
+          
+          return {
+              ...group,
+              matches: group.matches.map(m => {
+                  if (m.start === match.start) {
+                      return { ...m, is_allowed: newAllowedState };
+                  }
+                  return m;
+              })
+          };
+      }));
 
       // Send to API
-      await fetch(`${apiBase}/files/${file.filename}/overrides`, {
+      await fetch(`${apiBase}/files/${encodeURIComponent(file.filename)}/overrides`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -59,35 +55,45 @@ function FileRulesTab({ file, apiBase }) {
       );
   }
 
-  if (loading) return <div>Loading mathces...</div>;
+  if (loading) return <div>Loading rules...</div>;
 
   return (
     <div>
-        <h2>Detected Matches</h2>
+        <h2>File Rules</h2>
         <div className="rules-list">
-            {matches.length === 0 && <p>No blocklist matches found.</p>}
-            {matches.map((match, idx) => (
-                <div key={idx} className={`rule-item ${match.is_allowed ? 'allowed' : 'blocked'}`}>
-                    <div className="rule-text">
-                        <div className="rule-context" style={{color: 'var(--text-primary)'}}>
-                            ... {match.prefix} <span style={{
-                                color: match.is_allowed ? 'var(--success)' : 'var(--error)',
-                                fontWeight: 'bold'
-                            }}>{match.phrase}</span> {match.suffix} ...
-                        </div>
-                        <div style={{fontSize: '0.8em', marginTop: 4, color: 'var(--text-secondary)'}}>
-                            {match.is_allowed ? "ALLOWED" : "BLOCKED"} | Time: {match.start.toFixed(2)}s
-                        </div>
+            {groups.length === 0 && <p>No rules found.</p>}
+            {groups.map((group) => (
+                <details key={group.phrase} className="rule-group">
+                    <summary className="rule-group-summary">
+                        <span className="group-phrase">"{group.phrase}"</span>
+                        <span className="group-count">{group.count} instances</span>
+                    </summary>
+                    <div className="rule-group-content">
+                        {group.matches.map((match, idx) => (
+                            <div key={idx} className={`rule-item ${match.is_allowed ? 'allowed' : 'blocked'}`}>
+                                <div className="rule-text">
+                                    <div className="rule-context" style={{color: 'var(--text-primary)'}}>
+                                        ... {match.prefix} <span style={{
+                                            color: match.is_allowed ? 'var(--success)' : 'var(--error)',
+                                            fontWeight: 'bold'
+                                        }}>{match.phrase}</span> {match.suffix} ...
+                                    </div>
+                                    <div style={{fontSize: '0.8em', marginTop: 4, color: 'var(--text-secondary)'}}>
+                                        {match.is_allowed ? "ALLOWED" : "BLOCKED"} | Time: {match.start.toFixed(2)}s
+                                    </div>
+                                </div>
+                                <label className="toggle-switch">
+                                    <input 
+                                        type="checkbox" 
+                                        checked={match.is_allowed}
+                                        onChange={(e) => toggleOverride(match, e.target.checked)}
+                                    />
+                                    <span className="slider"></span>
+                                </label>
+                            </div>
+                        ))}
                     </div>
-                    <label className="toggle-switch">
-                        <input 
-                            type="checkbox" 
-                            checked={match.is_allowed}
-                            onChange={(e) => toggleOverride(match, e.target.checked)}
-                        />
-                        <span className="slider"></span>
-                    </label>
-                </div>
+                </details>
             ))}
         </div>
     </div>

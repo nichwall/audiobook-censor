@@ -147,20 +147,36 @@ def get_transcript_for_ui(filename: str):
     # The UI wants a list of "FilterAction" items.
     # We will return the list of intervals suitable for display.
     
-    response_items = []
+    response_groups = {}
+    
     for s, e, is_allowed, phrase, prev, after in final_intervals:
-        response_items.append({
+        phrase_str = " ".join(phrase)
+        item = {
             "start": s,
             "end": e,
             "is_allowed": is_allowed,
-            "phrase": " ".join(phrase),
+            "phrase": phrase_str,
             "prefix": " ".join(prev),
             "suffix": " ".join(after),
-            "context": " ".join(prev) + " " + " ".join(phrase) + " " + " ".join(after),
+            "context": " ".join(prev) + " " + phrase_str + " " + " ".join(after),
             "original_match": not is_allowed # Initially blocked by blocklist
-        })
+        }
         
-    return {"intervals": response_items}
+        if phrase_str not in response_groups:
+            response_groups[phrase_str] = []
+        response_groups[phrase_str].append(item)
+        
+    # Convert to list
+    groups_list = []
+    for phrase, items in response_groups.items():
+        groups_list.append({
+            "phrase": phrase,
+            "count": len(items),
+            "matches": items
+        })
+    groups_list.sort(key=lambda x: x["phrase"])
+        
+    return {"groups": groups_list}
 
 @app.post("/api/files/{filename}/censor")
 def censor_file(filename: str):
