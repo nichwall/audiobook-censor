@@ -58,3 +58,6 @@ input/
 transcripts/
 output/
 python_venv/
+*.json
+*.pyc
+*.log
