@@ -1,91 +1,57 @@
-import React, { useState, useEffect, memo, useMemo } from 'react';
-
-// Memoized vocab component to prevent re-renders on every keystroke in SearchBar
-const VocabSidebar = memo(({ vocab, onSelectWord }) => {
-  const [filter, setFilter] = useState("");
-  
-  const filteredVocab = useMemo(() => {
-    let list = vocab;
-    if (filter) {
-      list = vocab.filter(v => v.word.includes(filter.toLowerCase()));
-    }
-    return list.slice(0, 1000); // Limit to 1000 for performance
-  }, [vocab, filter]);
-
-  return (
-    <div className="vocab-sidebar" style={{width: 280, display: 'flex', flexDirection: 'column', borderRight: '1px solid var(--border-color)', paddingRight: 16}}>
-      <h3>Vocabulary</h3>
-      <input 
-        type="text" 
-        placeholder="Filter vocabulary..." 
-        value={filter}
-        onChange={e => setFilter(e.target.value)}
-        style={{
-          width: '100%',
-          padding: '8px',
-          marginBottom: 12,
-          backgroundColor: 'var(--bg-primary)',
-          color: 'var(--text-primary)',
-          border: '1px solid var(--border-color)',
-          borderRadius: 4
-        }}
-      />
-      <div style={{flex: 1, overflowY: 'auto'}}>
-        {filteredVocab.map((v, i) => (
-          <div 
-            key={i} 
-            className="vocab-item"
-            onClick={() => onSelectWord(v.word)}
-            style={{
-              padding: '8px 12px',
-              cursor: 'pointer',
-              borderRadius: 4,
-              display: 'flex',
-              justifyContent: 'space-between',
-              fontSize: '0.9em'
-            }}
-          >
-            <span className="word">{v.word}</span>
-            <span className="count" style={{color: 'var(--text-secondary)'}}>{v.count}</span>
-          </div>
-        ))}
-        {vocab.length > 1000 && !filter && <div style={{padding: 10, fontSize: '0.8em', color: 'var(--text-secondary)'}}>Showing top 1000 words...</div>}
-      </div>
-    </div>
-  );
-});
+import React, { useState, useEffect, useMemo } from 'react';
 
 function SearchTab({ file, apiBase }) {
   const [query, setQuery] = useState("");
-  const [vocab, setVocab] = useState([]);
   const [results, setResults] = useState([]);
   const [loading, setLoading] = useState(false);
   const [status, setStatus] = useState("");
+  const [blocklist, setBlocklist] = useState([]);
+
+  // Fetch blocklist
+  const fetchBlocklist = async () => {
+    try {
+      const res = await fetch(`${apiBase}/config/global`);
+      const config = await res.json();
+      const list = (config.blocklist || "")
+        .split('\n')
+        .map(w => w.trim().toLowerCase())
+        .filter(w => w);
+      setBlocklist(list);
+    } catch (e) {
+      console.error("Error fetching blocklist:", e);
+    }
+  };
 
   useEffect(() => {
-    if (!file.transcribed) return;
-    fetch(`${apiBase}/files/${file.id}/vocabulary`)
-      .then(res => res.json())
-      .then(data => setVocab(data || []))
-      .catch(err => console.error(err));
-  }, [file, apiBase]);
+    fetchBlocklist();
+  }, [apiBase]);
 
-  const handleSearch = (q) => {
-    const searchQ = q || query;
-    if (!searchQ.trim()) return;
+  // Real-time search with debounce
+  useEffect(() => {
+    if (!file.transcribed) return;
     
-    setLoading(true);
-    fetch(`${apiBase}/files/${file.id}/search?q=${encodeURIComponent(searchQ)}`)
-      .then(res => res.json())
-      .then(data => {
-        setResults(data || []);
-        setLoading(false);
-      })
-      .catch(err => {
-        console.error(err);
-        setLoading(false);
-      });
-  };
+    const trimmed = query.trim();
+    if (!trimmed) {
+      setResults([]);
+      return;
+    }
+
+    const timer = setTimeout(() => {
+      setLoading(true);
+      fetch(`${apiBase}/files/${file.id}/search?q=${encodeURIComponent(trimmed)}`)
+        .then(res => res.json())
+        .then(data => {
+          setResults(data || []);
+          setLoading(false);
+        })
+        .catch(err => {
+          console.error(err);
+          setLoading(false);
+        });
+    }, 300); // 300ms debounce
+
+    return () => clearTimeout(timer);
+  }, [query, file.id, apiBase, file.transcribed]);
 
   const handleAddToBlocklist = async (word) => {
     if (!word) return;
@@ -94,18 +60,19 @@ function SearchTab({ file, apiBase }) {
       const res = await fetch(`${apiBase}/config/global`);
       const config = await res.json();
       
-      let blocklist = config.blocklist || "";
-      const words = blocklist.split('\n').map(w => w.trim().toLowerCase());
+      let currentBlocklistStr = config.blocklist || "";
+      const words = currentBlocklistStr.split('\n').map(w => w.trim().toLowerCase());
       
       if (!words.includes(word.toLowerCase())) {
-        blocklist = blocklist.trim() + (blocklist ? "\n" : "") + word;
+        const newBlocklist = currentBlocklistStr.trim() + (currentBlocklistStr ? "\n" : "") + word;
         
         await fetch(`${apiBase}/config/global`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ ...config, blocklist })
+          body: JSON.stringify({ ...config, blocklist: newBlocklist })
         });
         setStatus(`"${word}" added to blocklist!`);
+        fetchBlocklist(); // Refresh local list
       } else {
         setStatus(`"${word}" is already in blocklist.`);
       }
@@ -117,6 +84,13 @@ function SearchTab({ file, apiBase }) {
     }
   };
 
+  const isBlocked = (text) => {
+    if (!text) return false;
+    return blocklist.includes(text.trim().toLowerCase());
+  };
+
+  const queryIsBlocked = useMemo(() => isBlocked(query), [query, blocklist]);
+
   if (!file.transcribed) {
     return (
       <div className="card">
@@ -127,65 +101,79 @@ function SearchTab({ file, apiBase }) {
   }
 
   return (
-    <div className="search-tab-container" style={{display: 'flex', gap: 24, height: 'calc(100vh - 200px)'}}>
-      <VocabSidebar 
-        vocab={vocab} 
-        onSelectWord={(word) => {
-          setQuery(word);
-          handleSearch(word);
-        }} 
-      />
-
-      <div className="search-main" style={{flex: 1, display: 'flex', flexDirection: 'column'}}>
-        <div className="search-header" style={{marginBottom: 20}}>
-          <div style={{display: 'flex', gap: 12, alignItems: 'center'}}>
-            <input 
-              type="text" 
-              className="list-editor" 
-              style={{height: 'auto', padding: '10px 15px'}}
-              placeholder="Search for a word..." 
-              value={query}
-              onChange={e => setQuery(e.target.value)}
-              onKeyDown={e => e.key === 'Enter' && handleSearch()}
-            />
-            <button className="btn btn-primary" onClick={() => handleSearch()}>Search</button>
-            {query && (
-              <button 
-                className="btn btn-secondary" 
-                onClick={() => handleAddToBlocklist(query)}
-                title="Add current search term to global blocklist"
-              >
-                Block "{query}"
-              </button>
-            )}
-          </div>
-          {status && <div style={{marginTop: 8, color: 'var(--accent-primary)', fontSize: '0.9em'}}>{status}</div>}
+    <div className="search-tab-container" style={{maxWidth: '800px', margin: '0 auto', display: 'flex', flexDirection: 'column', height: 'calc(100vh - 200px)'}}>
+      <div className="search-header" style={{marginBottom: 24}}>
+        <div style={{display: 'flex', gap: 12, alignItems: 'center'}}>
+          <input 
+            type="text" 
+            className="list-editor" 
+            style={{flex: 1, padding: '12px 20px', fontSize: '1.1rem', borderRadius: '12px', border: '2px solid var(--border-color)', outline: 'none'}}
+            placeholder="Type to search the transcript..." 
+            value={query}
+            onChange={e => setQuery(e.target.value)}
+            autoFocus
+          />
+          {query.trim() && (
+            <button 
+              className={`btn ${queryIsBlocked ? 'btn-secondary' : 'btn-primary'}`}
+              onClick={() => !queryIsBlocked && handleAddToBlocklist(query.trim())}
+              disabled={queryIsBlocked}
+              style={{padding: '12px 24px', borderRadius: '12px', opacity: queryIsBlocked ? 0.7 : 1}}
+              title={queryIsBlocked ? "Already in blocklist" : "Add to global blocklist"}
+            >
+              {queryIsBlocked ? "Already Blocked" : "Block Phrase"}
+            </button>
+          )}
         </div>
+        {status && <div style={{marginTop: 12, color: 'var(--accent-primary)', fontSize: '0.9em', textAlign: 'center'}}>{status}</div>}
+      </div>
 
-        <div className="search-results" style={{flex: 1, overflowY: 'auto'}}>
-          {loading ? (
-            <div>Searching...</div>
-          ) : results.length > 0 ? (
-            <div className="results-list" style={{display: 'flex', flexDirection: 'column', gap: 12}}>
-              {results.map((r, i) => (
-                <div key={i} className="rule-item" style={{justifyContent: 'flex-start', borderLeft: 'none', background: 'var(--bg-secondary)'}}>
+      <div className="search-results" style={{flex: 1, overflowY: 'auto', paddingRight: '10px'}}>
+        {loading ? (
+          <div style={{textAlign: 'center', marginTop: 40, color: 'var(--text-secondary)'}}>Searching...</div>
+        ) : results.length > 0 ? (
+          <div className="results-list" style={{display: 'flex', flexDirection: 'column', gap: 12}}>
+            <div style={{fontSize: '0.85rem', color: 'var(--text-secondary)', marginBottom: 8, textAlign: 'right'}}>
+                {results.length} instances found
+            </div>
+            {results.map((r, i) => {
+              const blocked = isBlocked(r.word);
+              return (
+                <div key={i} className="rule-item" style={{justifyContent: 'flex-start', borderLeft: 'none', background: 'var(--bg-secondary)', padding: '16px', borderRadius: '12px', position: 'relative'}}>
                   <div className="rule-text" style={{flex: 1}}>
-                    <div className="rule-context" style={{color: 'var(--text-primary)', fontSize: '1.1em'}}>
-                       ... {r.prefix} <span style={{color: 'var(--accent-primary)', fontWeight: 'bold'}}>{r.word}</span> {r.suffix} ...
+                    <div className="rule-context" style={{color: 'var(--text-primary)', fontSize: '1.1rem', lineHeight: '1.5'}}>
+                       <span style={{color: 'var(--text-tertiary)', fontSize: '0.9em'}}>...</span> {r.prefix} <span style={{color: 'var(--accent-primary)', fontWeight: 'bold', borderBottom: '2px solid var(--accent-primary)'}}>{r.word}</span> {r.suffix} <span style={{color: 'var(--text-tertiary)', fontSize: '0.9em'}}>...</span>
                     </div>
-                    <div style={{fontSize: '0.8em', marginTop: 4, color: 'var(--text-secondary)'}}>
-                        Time: {r.start.toFixed(2)}s
+                    <div style={{fontSize: '0.8rem', marginTop: 8, color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: 12}}>
+                        <div><span style={{color: 'var(--accent-secondary)'}}>●</span> Time: {Math.floor(r.start / 60)}:{(r.start % 60).toFixed(2).padStart(5, '0')}</div>
+                        {blocked && (
+                          <span style={{
+                            backgroundColor: 'rgba(255, 68, 68, 0.15)',
+                            color: '#ff4444',
+                            padding: '2px 8px',
+                            borderRadius: '4px',
+                            fontSize: '0.75rem',
+                            fontWeight: 'bold',
+                            textTransform: 'uppercase'
+                          }}>
+                            Blocked
+                          </span>
+                        )}
                     </div>
                   </div>
                 </div>
-              ))}
-            </div>
-          ) : query ? (
-            <div style={{color: 'var(--text-secondary)'}}>No instances found for "{query}".</div>
-          ) : (
-            <div style={{color: 'var(--text-secondary)'}}>Search for a word or pick one from the vocabulary list to see context.</div>
-          )}
-        </div>
+              );
+            })}
+          </div>
+        ) : query.trim() ? (
+          <div style={{textAlign: 'center', marginTop: 60, color: 'var(--text-secondary)'}}>
+            No instances found for "{query}".
+          </div>
+        ) : (
+          <div style={{textAlign: 'center', marginTop: 60, color: 'var(--text-secondary)', fontSize: '1.1rem'}}>
+             Search for any word or phrase to see every instance in the audiobook.
+          </div>
+        )}
       </div>
     </div>
   );

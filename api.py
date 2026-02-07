@@ -247,43 +247,69 @@ def search_words(id: str, q: str = ""):
     index = data["index"]
     words_list = data["words"]
     
-    first_word = query_words[0]
-    if first_word not in index:
-        return []
+    first_q_word = query_words[0]
+    
+    # Prefix matching logic
+    # If multiple words, the first word must be an exact match for performance/relevance
+    if len(query_words) > 1:
+        starter_words = [first_q_word] if first_q_word in index else []
+    else:
+        # Single word: find all words in index that start with this prefix
+        starter_words = [w for w in index.keys() if w.startswith(first_q_word)]
         
     results = []
-    for start_idx in index[first_word]:
-        # Check if the whole phrase matches
-        if start_idx + len(query_words) > len(words_list):
-            continue
+    max_results = 500
+    
+    for starter_word in starter_words:
+        if len(results) >= max_results:
+            break
             
-        match = True
-        for i in range(1, len(query_words)):
-            if words_list[start_idx + i]["word"] != query_words[i]:
-                match = False
+        for start_idx in index[starter_word]:
+            if len(results) >= max_results:
                 break
-        
-        if match:
-            # Context extraction
-            prefix_words = []
-            if start_idx > 1:
-                prefix_words.append(words_list[start_idx-2]["word"])
-            if start_idx > 0:
-                prefix_words.append(words_list[start_idx-1]["word"])
-            
-            suffix_words = []
-            last_idx = start_idx + len(query_words) - 1
-            if last_idx + 1 < len(words_list):
-                suffix_words.append(words_list[last_idx+1]["word"])
-            if last_idx + 2 < len(words_list):
-                suffix_words.append(words_list[last_idx+2]["word"])
                 
-            results.append({
-                "start": words_list[start_idx]["start"],
-                "word": " ".join(query_words),
-                "prefix": " ".join(prefix_words),
-                "suffix": " ".join(suffix_words)
-            })
+            if start_idx + len(query_words) > len(words_list):
+                continue
+                
+            match = True
+            actual_phrase = []
+            for i in range(len(query_words)):
+                q_word = query_words[i]
+                a_word = words_list[start_idx + i]["word"]
+                
+                if i == len(query_words) - 1:
+                    # Last word in query can be a prefix match
+                    if not a_word.startswith(q_word):
+                        match = False
+                        break
+                else:
+                    # Intermediate words must be exact matches
+                    if a_word != q_word:
+                        match = False
+                        break
+                actual_phrase.append(a_word)
+            
+            if match:
+                # Context extraction
+                prefix_words = []
+                if start_idx > 1:
+                    prefix_words.append(words_list[start_idx-2]["word"])
+                if start_idx > 0:
+                    prefix_words.append(words_list[start_idx-1]["word"])
+                
+                suffix_words = []
+                last_match_idx = start_idx + len(query_words) - 1
+                if last_match_idx + 1 < len(words_list):
+                    suffix_words.append(words_list[last_match_idx+1]["word"])
+                if last_match_idx + 2 < len(words_list):
+                    suffix_words.append(words_list[last_match_idx+2]["word"])
+                    
+                results.append({
+                    "start": words_list[start_idx]["start"],
+                    "word": " ".join(actual_phrase),
+                    "prefix": " ".join(prefix_words),
+                    "suffix": " ".join(suffix_words)
+                })
             
     return results
 
