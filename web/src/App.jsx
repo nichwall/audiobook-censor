@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import Sidebar from './components/Sidebar';
 import SummaryTab from './components/SummaryTab';
 import ListsTab from './components/ListsTab';
@@ -13,6 +13,35 @@ function App() {
   const [activeTab, setActiveTab] = useState('summary');
   const [refreshTrigger, setRefreshTrigger] = useState(0);
   const [jobStatus, setJobStatus] = useState({ current: null, queue: [] });
+  const pollingTimeoutRef = useRef(null);
+
+  const pollJobs = () => {
+    if (pollingTimeoutRef.current) clearTimeout(pollingTimeoutRef.current);
+    
+    fetch(`${API_BASE}/jobs/status`)
+        .then(res => res.json())
+        .then(data => {
+            setJobStatus(prev => {
+                const wasBusy = prev.current || prev.queue.length > 0;
+                const isBusy = data.current || data.queue.length > 0;
+                
+                if (wasBusy && !isBusy) {
+                    // Just finished a job, refresh file listings
+                    setRefreshTrigger(p => p + 1);
+                }
+                
+                // Set next polling interval: 5s if busy, 60s if idle
+                const nextInterval = isBusy ? 5000 : 60000;
+                pollingTimeoutRef.current = setTimeout(pollJobs, nextInterval);
+                
+                return data;
+            });
+        })
+        .catch(err => {
+            console.error("Poll jobs failed:", err);
+            pollingTimeoutRef.current = setTimeout(pollJobs, 60000);
+        });
+  };
 
   useEffect(() => {
     fetch(`${API_BASE}/files`)
@@ -36,29 +65,13 @@ function App() {
       .catch(err => console.error(err));
   }, [refreshTrigger]);
 
-  // Poll for job status
+  // Initial poll on mount
   useEffect(() => {
-    const pollJobs = () => {
-        fetch(`${API_BASE}/jobs/status`)
-            .then(res => res.json())
-            .then(data => {
-                setJobStatus(prev => {
-                    // If a job just finished (was busy, now idle), refresh the file list
-                    const wasBusy = prev.current || prev.queue.length > 0;
-                    const isBusy = data.current || data.queue.length > 0;
-                    if (wasBusy && !isBusy) {
-                        refreshData();
-                    }
-                    return data;
-                });
-            })
-            .catch(err => console.error("Poll jobs failed:", err));
+    pollJobs();
+    return () => {
+        if (pollingTimeoutRef.current) clearTimeout(pollingTimeoutRef.current);
     };
-
-    const interval = setInterval(pollJobs, 5000);
-    pollJobs(); // Initial poll
-    return () => clearInterval(interval);
-  }, []); // Only run on mount
+  }, []);
 
   // Handle browser back/forward buttons
   useEffect(() => {
@@ -90,6 +103,8 @@ function App() {
 
   const refreshData = () => {
     setRefreshTrigger(prev => prev + 1);
+    // Trigger immediate poll when a task is started
+    pollJobs();
   };
 
   return (
