@@ -90,6 +90,18 @@ function SummaryTab({ file, apiBase, onUpdate, jobStatus }) {
     return parts.join(' ');
   };
 
+  const formatTime = (timestamp) => {
+      if (!timestamp) return "N/A";
+      const date = new Date(timestamp * 1000);
+      return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+  };
+
+  const getEstimatedEndTime = (job) => {
+      if (!job || !job.started_at || !job.duration) return null;
+      const factor = job.type === 'transcribe' ? 0.08 : (job.type === 'censor' ? 0.03 : 0.01);
+      return job.started_at + (job.duration * factor);
+  };
+
   const statItemStyle = (isClickable) => ({
     display: 'flex',
     flexDirection: 'column',
@@ -123,10 +135,19 @@ function SummaryTab({ file, apiBase, onUpdate, jobStatus }) {
       {jobStatus.current && (
           <div className="card" style={{marginBottom: 20, display: 'flex', alignItems: 'center', gap: 12, borderLeft: '4px solid var(--accent-primary)'}}>
               <div className="spinner"></div>
-              <div>
-                  <strong>Currently {jobStatus.current.type === 'transcribe' ? 'Transcribing' : 'Censoring'}:</strong> {jobStatus.current.filename}
+              <div style={{flex: 1}}>
+                  <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center'}}>
+                      <strong>Currently {jobStatus.current.type === 'transcribe' ? 'Transcribing' : 'Censoring'}:</strong>
+                      <span style={{fontSize: '0.8rem', color: 'var(--text-secondary)'}}>{jobStatus.current.filename}</span>
+                  </div>
+                  <div style={{display: 'flex', gap: 16, marginTop: 8, fontSize: '0.85rem'}}>
+                      <div><span style={{color: 'var(--text-secondary)'}}>Started:</span> {formatTime(jobStatus.current.started_at)}</div>
+                      {jobStatus.current.duration && (
+                          <div><span style={{color: 'var(--text-secondary)'}}>Est. End:</span> {formatTime(getEstimatedEndTime(jobStatus.current))}</div>
+                      )}
+                  </div>
                   {jobStatus.queue.length > 0 && (
-                      <div style={{fontSize: '0.8rem', color: 'var(--text-secondary)', marginTop: 4}}>
+                      <div style={{fontSize: '0.8rem', color: 'var(--text-secondary)', marginTop: 8, borderTop: '1px solid var(--border-color)', paddingTop: 8}}>
                           Next in queue: {jobStatus.queue[0].filename} ({jobStatus.queue.length} more)
                       </div>
                   )}

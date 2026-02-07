@@ -159,7 +159,12 @@ def transcribe_file(id: str):
     fpath = os.path.join(INPUT_DIR, filename)
     base_no_ext = filename.rsplit(".", 1)[0]
     
-    job_id = job_manager.enqueue(id, filename, "transcribe", input_path=fpath, base_no_ext=base_no_ext)
+    try:
+        duration = censor_app.get_audio_duration(fpath)
+    except:
+        duration = None
+        
+    job_id = job_manager.enqueue(id, filename, "transcribe", input_path=fpath, base_no_ext=base_no_ext, duration=duration)
     return {"status": "success", "job_id": job_id, "message": "Transcription enqueued"}
 
 @app.get("/api/files/{id}/transcript")
@@ -289,8 +294,15 @@ def search_words(id: str, q: str = ""):
 def prepare_censor(id: str):
     mapping = load_mapping()
     filename = get_file_path(id, mapping)
+    fpath = os.path.join(INPUT_DIR, filename)
     base_no_ext = filename.rsplit(".", 1)[0]
-    job_id = job_manager.enqueue(id, filename, "prepare", base_no_ext=base_no_ext)
+    
+    try:
+        duration = censor_app.get_audio_duration(fpath)
+    except:
+        duration = None
+
+    job_id = job_manager.enqueue(id, filename, "prepare", base_no_ext=base_no_ext, duration=duration)
     return {"status": "success", "job_id": job_id, "message": "Rule matching enqueued"}
 
 @app.post("/api/files/{id}/censor")
@@ -300,7 +312,13 @@ def censor_file(id: str):
     fpath = os.path.join(INPUT_DIR, filename)
     base_no_ext = filename.rsplit(".", 1)[0]
     output_file = os.path.join(OUTPUT_DIR, base_no_ext + "_censored.opus")
-    job_id = job_manager.enqueue(id, filename, "censor", input_path=fpath, output_path=output_file, base_no_ext=base_no_ext)
+    
+    try:
+        duration = censor_app.get_audio_duration(fpath)
+    except:
+        duration = None
+
+    job_id = job_manager.enqueue(id, filename, "censor", input_path=fpath, output_path=output_file, base_no_ext=base_no_ext, duration=duration)
     return {"status": "success", "job_id": job_id, "message": "Censoring enqueued"}
 
 @app.get("/api/jobs/status")

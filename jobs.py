@@ -35,7 +35,7 @@ class JobManager:
         with open(self.jobs_file, "w") as f:
             json.dump(self.status, f, indent=2)
 
-    def enqueue(self, file_id, filename, job_type, input_path=None, output_path=None, base_no_ext=None):
+    def enqueue(self, file_id, filename, job_type, input_path=None, output_path=None, base_no_ext=None, duration=None):
         job = {
             "id": str(uuid.uuid4()),
             "file_id": file_id,
@@ -44,6 +44,7 @@ class JobManager:
             "input_path": input_path,
             "output_path": output_path,
             "base_no_ext": base_no_ext,
+            "duration": duration,
             "status": "queued",
             "progress": 0,
             "enqueued_at": time.time()

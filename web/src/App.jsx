@@ -42,19 +42,23 @@ function App() {
         fetch(`${API_BASE}/jobs/status`)
             .then(res => res.json())
             .then(data => {
-                setJobStatus(data);
-                // If a job just finished, refresh file data
-                if (!data.current && (jobStatus.current || jobStatus.queue.length > 0)) {
-                    refreshData();
-                }
+                setJobStatus(prev => {
+                    // If a job just finished (was busy, now idle), refresh the file list
+                    const wasBusy = prev.current || prev.queue.length > 0;
+                    const isBusy = data.current || data.queue.length > 0;
+                    if (wasBusy && !isBusy) {
+                        refreshData();
+                    }
+                    return data;
+                });
             })
             .catch(err => console.error("Poll jobs failed:", err));
     };
 
-    const interval = setInterval(pollJobs, 2000);
+    const interval = setInterval(pollJobs, 5000);
     pollJobs(); // Initial poll
     return () => clearInterval(interval);
-  }, [jobStatus]);
+  }, []); // Only run on mount
 
   // Handle browser back/forward buttons
   useEffect(() => {
