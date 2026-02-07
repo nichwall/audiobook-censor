@@ -145,7 +145,7 @@ function SearchTab({ file, apiBase }) {
                        <span style={{color: 'var(--text-tertiary)', fontSize: '0.9em'}}>...</span> {r.prefix} <span style={{color: 'var(--accent-primary)', fontWeight: 'bold', borderBottom: '2px solid var(--accent-primary)'}}>{r.word}</span> {r.suffix} <span style={{color: 'var(--text-tertiary)', fontSize: '0.9em'}}>...</span>
                     </div>
                     <div style={{fontSize: '0.8rem', marginTop: 8, color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: 12}}>
-                        <div><span style={{color: 'var(--accent-secondary)'}}>●</span> Time: {Math.floor(r.start / 60)}:{(r.start % 60).toFixed(2).padStart(5, '0')}</div>
+                        <div><span style={{color: 'var(--accent-secondary)'}}>●</span> Time: {Math.floor(r.start / 3600)}:{Math.floor((r.start % 3600) / 60).toString().padStart(2, '0')}:{(r.start % 60).toFixed(2).padStart(5, '0')}</div>
                         {blocked && (
                           <span style={{
                             backgroundColor: 'rgba(255, 68, 68, 0.15)',
