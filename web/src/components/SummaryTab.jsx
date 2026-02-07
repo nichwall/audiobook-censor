@@ -13,11 +13,9 @@ function SummaryTab({ file, apiBase, onUpdate }) {
     setLoading(true);
     setMsg("Starting full workflow...");
     try {
-      setMsg("Step 1/3: Transcribing...");
+      setMsg("Step 1/2: Transcribing...");
       await fetch(`${apiBase}/files/${file.id}/transcribe`, { method: 'POST' });
-      setMsg("Step 2/3: Preparing matches...");
-      await fetch(`${apiBase}/files/${file.id}/prepare-censor`, { method: 'POST' });
-      setMsg("Step 3/3: Censoring...");
+      setMsg("Step 2/2: Censoring...");
       await fetch(`${apiBase}/files/${file.id}/censor`, { method: 'POST' });
       setMsg("Full workflow complete!");
       onUpdate();
@@ -25,20 +23,6 @@ function SummaryTab({ file, apiBase, onUpdate }) {
       setMsg("Error in workflow: " + e.message);
     } finally {
       setLoading(false);
-    }
-  };
-
-  const handlePrepare = async () => {
-    setLoading(true);
-    setMsg("Updating matches...");
-    try {
-        await fetch(`${apiBase}/files/${file.id}/prepare-censor`, { method: 'POST' });
-        setMsg("Matches updated!");
-        onUpdate();
-    } catch (e) {
-        setMsg("Error updating matches: " + e.message);
-    } finally {
-        setLoading(false);
     }
   };
 
@@ -172,30 +156,14 @@ function SummaryTab({ file, apiBase, onUpdate }) {
             </div>
         </button>
 
-        {/* Box 3: Update Matches */}
-        <button 
-            className="stat-item clickable-stat" 
-            style={statItemStyle(file.transcribed)}
-            onClick={() => handleItemClick(handlePrepare, file.transcribed)}
-            disabled={loading || !file.transcribed}
-        >
-            <div className="stat-label">2. Rule Matching</div>
-            <div style={{marginTop: 12}}>
-                <div className="stat-value" style={{fontSize: '1.2rem'}}>Update Matches</div>
-                <div style={{fontSize: '0.8rem', color: 'var(--text-secondary)', marginTop: 4, fontWeight: 'normal'}}>
-                    Refreshes in seconds
-                </div>
-            </div>
-        </button>
-
-        {/* Box 4: Censoring */}
+        {/* Box 3: Censoring */}
         <button 
             className="stat-item clickable-stat" 
             style={statItemStyle(file.transcribed && (!file.censored || file.is_out_of_date))}
             onClick={() => handleItemClick(handleCensor, file.transcribed && (!file.censored || file.is_out_of_date))}
             disabled={loading || !file.transcribed || (file.censored && !file.is_out_of_date)}
         >
-            <div className="stat-label">3. Censoring</div>
+            <div className="stat-label">2. Censoring</div>
             <div style={{marginTop: 12}}>
                 {file.censored && !file.is_out_of_date ? (
                     <div style={{color: 'var(--success)', fontWeight: 'bold'}}>
