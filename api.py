@@ -10,6 +10,7 @@ import uuid
 from typing import List, Dict, Optional
 
 from censor import AudiobookCensor
+from jobs import JobManager
 
 app = FastAPI()
 
@@ -29,8 +30,10 @@ TRANSCRIPT_DIR = "transcripts"
 GLOBAL_BLOCKLIST = "blocklist.txt"
 GLOBAL_ALLOWLIST = "allowlist.txt"
 MAPPING_FILE = "file_mapping.json"
+JOBS_FILE = "jobs.json"
 
 censor_app = AudiobookCensor(INPUT_DIR, OUTPUT_DIR, TRANSCRIPT_DIR)
+job_manager = JobManager(JOBS_FILE, censor_app, TRANSCRIPT_DIR, GLOBAL_BLOCKLIST, GLOBAL_ALLOWLIST)
 
 def load_mapping():
     if os.path.exists(MAPPING_FILE):
@@ -128,9 +131,9 @@ def list_files():
                 is_out_of_date = True
 
         try:
-            duration = censor_app.get_audio_duration(fpath)
+             duration = censor_app.get_audio_duration(fpath)
         except:
-            duration = None
+             duration = None
 
         files.append(FileStatus(
             id=file_id,
@@ -154,10 +157,10 @@ def transcribe_file(id: str):
     mapping = load_mapping()
     filename = get_file_path(id, mapping)
     fpath = os.path.join(INPUT_DIR, filename)
-    
     base_no_ext = filename.rsplit(".", 1)[0]
-    censor_app.transcribe(fpath, base_no_ext)
-    return {"status": "success", "message": "Transcription complete"}
+    
+    job_id = job_manager.enqueue(id, filename, "transcribe", input_path=fpath, base_no_ext=base_no_ext)
+    return {"status": "success", "job_id": job_id, "message": "Transcription enqueued"}
 
 @app.get("/api/files/{id}/transcript")
 def get_transcript_for_ui(id: str):
@@ -177,17 +180,10 @@ def get_transcript_for_ui(id: str):
             overrides = json.load(f)
 
     # Calculate intervals to know what is blocked
-    # This logic matches censor.py exactly and uses caching
     final_intervals = censor_app.calculate_matches_with_cache(base_no_ext, GLOBAL_BLOCKLIST, GLOBAL_ALLOWLIST)
-    
     final_intervals = censor_app.apply_overrides(final_intervals, overrides)
     
-    # We want to map this back to "ranges" for the UI.
-    # The UI wants a list of "FilterAction" items.
-    # We will return the list of intervals suitable for display.
-    
     response_groups = {}
-    
     for s, e, is_allowed, phrase, prev, after in final_intervals:
         phrase_str = " ".join(phrase)
         item = {
@@ -198,14 +194,13 @@ def get_transcript_for_ui(id: str):
             "prefix": " ".join(prev),
             "suffix": " ".join(after),
             "context": " ".join(prev) + " " + phrase_str + " " + " ".join(after),
-            "original_match": not is_allowed # Initially blocked by blocklist
+            "original_match": not is_allowed
         }
         
         if phrase_str not in response_groups:
             response_groups[phrase_str] = []
         response_groups[phrase_str].append(item)
         
-    # Convert to list
     groups_list = []
     for phrase, items in response_groups.items():
         groups_list.append({
@@ -214,7 +209,6 @@ def get_transcript_for_ui(id: str):
             "matches": items
         })
     groups_list.sort(key=lambda x: x["phrase"])
-        
     return {"groups": groups_list}
 
 @app.get("/api/files/{id}/vocabulary")
@@ -239,78 +233,56 @@ def search_words(id: str, q: str = ""):
     q = q.strip().lower()
     if not q:
         return []
-        
     query_words = q.split()
     if not query_words:
         return []
         
     index = data["index"]
     words_list = data["words"]
-    
     first_q_word = query_words[0]
     
-    # Prefix matching logic
-    # If multiple words, the first word must be an exact match for performance/relevance
     if len(query_words) > 1:
         starter_words = [first_q_word] if first_q_word in index else []
     else:
-        # Single word: find all words in index that start with this prefix
         starter_words = [w for w in index.keys() if w.startswith(first_q_word)]
         
     results = []
     max_results = 500
-    
     for starter_word in starter_words:
-        if len(results) >= max_results:
-            break
-            
+        if len(results) >= max_results: break
         for start_idx in index[starter_word]:
-            if len(results) >= max_results:
-                break
-                
-            if start_idx + len(query_words) > len(words_list):
-                continue
+            if len(results) >= max_results: break
+            if start_idx + len(query_words) > len(words_list): continue
                 
             match = True
             actual_phrase = []
             for i in range(len(query_words)):
                 q_word = query_words[i]
                 a_word = words_list[start_idx + i]["word"]
-                
                 if i == len(query_words) - 1:
-                    # Last word in query can be a prefix match
                     if not a_word.startswith(q_word):
                         match = False
                         break
                 else:
-                    # Intermediate words must be exact matches
                     if a_word != q_word:
                         match = False
                         break
                 actual_phrase.append(a_word)
             
             if match:
-                # Context extraction
                 prefix_words = []
-                if start_idx > 1:
-                    prefix_words.append(words_list[start_idx-2]["word"])
-                if start_idx > 0:
-                    prefix_words.append(words_list[start_idx-1]["word"])
-                
+                if start_idx > 1: prefix_words.append(words_list[start_idx-2]["word"])
+                if start_idx > 0: prefix_words.append(words_list[start_idx-1]["word"])
                 suffix_words = []
                 last_match_idx = start_idx + len(query_words) - 1
-                if last_match_idx + 1 < len(words_list):
-                    suffix_words.append(words_list[last_match_idx+1]["word"])
-                if last_match_idx + 2 < len(words_list):
-                    suffix_words.append(words_list[last_match_idx+2]["word"])
-                    
+                if last_match_idx + 1 < len(words_list): suffix_words.append(words_list[last_match_idx+1]["word"])
+                if last_match_idx + 2 < len(words_list): suffix_words.append(words_list[last_match_idx+2]["word"])
                 results.append({
                     "start": words_list[start_idx]["start"],
                     "word": " ".join(actual_phrase),
                     "prefix": " ".join(prefix_words),
                     "suffix": " ".join(suffix_words)
                 })
-            
     return results
 
 @app.post("/api/files/{id}/prepare-censor")
@@ -318,11 +290,8 @@ def prepare_censor(id: str):
     mapping = load_mapping()
     filename = get_file_path(id, mapping)
     base_no_ext = filename.rsplit(".", 1)[0]
-    # Ensure matches are fresh
-    censor_app.calculate_matches_with_cache(base_no_ext, GLOBAL_BLOCKLIST, GLOBAL_ALLOWLIST)
-    # Also trigger vocabulary cache update for Search tab
-    censor_app.calculate_vocab_with_cache(base_no_ext)
-    return {"status": "success"}
+    job_id = job_manager.enqueue(id, filename, "prepare", base_no_ext=base_no_ext)
+    return {"status": "success", "job_id": job_id, "message": "Rule matching enqueued"}
 
 @app.post("/api/files/{id}/censor")
 def censor_file(id: str):
@@ -331,22 +300,12 @@ def censor_file(id: str):
     fpath = os.path.join(INPUT_DIR, filename)
     base_no_ext = filename.rsplit(".", 1)[0]
     output_file = os.path.join(OUTPUT_DIR, base_no_ext + "_censored.opus")
-    
-    overrides_path = os.path.join(TRANSCRIPT_DIR, base_no_ext + "_overrides.json")
-    overrides = {}
-    if os.path.exists(overrides_path):
-        with open(overrides_path, "r") as f:
-            overrides = json.load(f)
+    job_id = job_manager.enqueue(id, filename, "censor", input_path=fpath, output_path=output_file, base_no_ext=base_no_ext)
+    return {"status": "success", "job_id": job_id, "message": "Censoring enqueued"}
 
-    # 1. Get prepared matches (uses cache)
-    final_intervals = censor_app.calculate_matches_with_cache(base_no_ext, GLOBAL_BLOCKLIST, GLOBAL_ALLOWLIST)
-    
-    # 2. Apply current overrides
-    final_intervals = censor_app.apply_overrides(final_intervals, overrides)
-    
-    # 3. Generate audio
-    censor_app.generate_censored_audio(fpath, final_intervals, output_file)
-    return {"status": "success", "message": "Censoring complete"}
+@app.get("/api/jobs/status")
+def get_jobs_status():
+    return job_manager.get_status()
 
 @app.post("/api/files/{id}/overrides/bulk")
 def update_overrides_bulk(id: str, data: dict):
@@ -354,20 +313,15 @@ def update_overrides_bulk(id: str, data: dict):
     filename = get_file_path(id, mapping)
     base_no_ext = filename.rsplit(".", 1)[0]
     overrides_path = os.path.join(TRANSCRIPT_DIR, base_no_ext + "_overrides.json")
-    
     os.makedirs(os.path.dirname(overrides_path), exist_ok=True)
-    
     overrides = {}
     if os.path.exists(overrides_path):
         with open(overrides_path, "r") as f:
             overrides = json.load(f)
-            
     for item in data.get("overrides", []):
         overrides[str(item["start_time"])] = item["allow"]
-        
     with open(overrides_path, "w") as f:
         json.dump(overrides, f)
-        
     return {"status": "success"}
 
 @app.get("/api/config/global")
@@ -391,26 +345,18 @@ def update_overrides(id: str, override: OverrideUpdate):
     filename = get_file_path(id, mapping)
     base_no_ext = filename.rsplit(".", 1)[0]
     overrides_path = os.path.join(TRANSCRIPT_DIR, base_no_ext + "_overrides.json")
-    
     os.makedirs(os.path.dirname(overrides_path), exist_ok=True)
-    
     overrides = {}
     if os.path.exists(overrides_path):
         with open(overrides_path, "r") as f:
             overrides = json.load(f)
-            
-    # Key is string representation of float
-    key = str(override.start_time)
-    overrides[key] = override.allow
-    
+    overrides[str(override.start_time)] = override.allow
     with open(overrides_path, "w") as f:
         json.dump(overrides, f, indent=2)
-        
     return {"status": "success"}
 
 def read_list_file(path):
-    if not os.path.exists(path):
-        return ""
+    if not os.path.exists(path): return ""
     with open(path, "r", encoding="utf-8") as f:
         return f.read()
 

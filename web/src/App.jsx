@@ -12,6 +12,7 @@ function App() {
   const [selectedFile, setSelectedFile] = useState(null);
   const [activeTab, setActiveTab] = useState('summary');
   const [refreshTrigger, setRefreshTrigger] = useState(0);
+  const [jobStatus, setJobStatus] = useState({ current: null, queue: [] });
 
   useEffect(() => {
     fetch(`${API_BASE}/files`)
@@ -34,6 +35,26 @@ function App() {
       })
       .catch(err => console.error(err));
   }, [refreshTrigger]);
+
+  // Poll for job status
+  useEffect(() => {
+    const pollJobs = () => {
+        fetch(`${API_BASE}/jobs/status`)
+            .then(res => res.json())
+            .then(data => {
+                setJobStatus(data);
+                // If a job just finished, refresh file data
+                if (!data.current && (jobStatus.current || jobStatus.queue.length > 0)) {
+                    refreshData();
+                }
+            })
+            .catch(err => console.error("Poll jobs failed:", err));
+    };
+
+    const interval = setInterval(pollJobs, 2000);
+    pollJobs(); // Initial poll
+    return () => clearInterval(interval);
+  }, [jobStatus]);
 
   // Handle browser back/forward buttons
   useEffect(() => {
@@ -60,8 +81,6 @@ function App() {
   };
 
   const handleBack = () => {
-      // Go back in history if we have state, or just clear if not?
-      // If we pushed state, back() goes to list.
       window.history.back();
   };
 
@@ -75,6 +94,7 @@ function App() {
         files={files} 
         selectedFile={selectedFile} 
         onSelectFile={handleSelectFile}
+        jobStatus={jobStatus}
       />
       
       <div className="main-content">
@@ -118,6 +138,7 @@ function App() {
                   file={selectedFile} 
                   apiBase={API_BASE} 
                   onUpdate={refreshData}
+                  jobStatus={jobStatus}
                 />
               )}
               {activeTab === 'lists' && (

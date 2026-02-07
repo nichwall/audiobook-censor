@@ -1,8 +1,13 @@
 import React, { useState } from 'react';
 
-function SummaryTab({ file, apiBase, onUpdate }) {
+function SummaryTab({ file, apiBase, onUpdate, jobStatus }) {
   const [loading, setLoading] = useState(false);
   const [msg, setMsg] = useState("");
+
+  const currentJob = jobStatus.current && jobStatus.current.file_id === file.id ? jobStatus.current : null;
+  const queuedJob = !currentJob ? jobStatus.queue.find(q => q.file_id === file.id) : null;
+  const anyJobRunning = !!jobStatus.current;
+  const isThisFileBusy = !!(currentJob || queuedJob);
 
   const handleRunAll = async () => {
     const est = (file.duration || 0) * (0.08 + 0.03);
@@ -11,16 +16,15 @@ function SummaryTab({ file, apiBase, onUpdate }) {
     }
 
     setLoading(true);
-    setMsg("Starting full workflow...");
+    setMsg("Enqueuing full workflow...");
     try {
-      setMsg("Step 1/2: Transcribing...");
+      // For Run All, we'll enqueue both steps
       await fetch(`${apiBase}/files/${file.id}/transcribe`, { method: 'POST' });
-      setMsg("Step 2/2: Censoring...");
       await fetch(`${apiBase}/files/${file.id}/censor`, { method: 'POST' });
-      setMsg("Full workflow complete!");
+      setMsg("Full workflow enqueued!");
       onUpdate();
     } catch (e) {
-      setMsg("Error in workflow: " + e.message);
+      setMsg("Error enqueuing workflow: " + e.message);
     } finally {
       setLoading(false);
     }
@@ -33,13 +37,13 @@ function SummaryTab({ file, apiBase, onUpdate }) {
     }
 
     setLoading(true);
-    setMsg("Censoring...");
+    setMsg("Enqueuing censoring task...");
     try {
         await fetch(`${apiBase}/files/${file.id}/censor`, { method: 'POST' });
-        setMsg("Censoring complete!");
+        setMsg("Censoring task enqueued!");
         onUpdate();
     } catch (e) {
-        setMsg("Error censoring: " + e.message);
+        setMsg("Error enqueuing censor: " + e.message);
     } finally {
         setLoading(false);
     }
@@ -52,13 +56,13 @@ function SummaryTab({ file, apiBase, onUpdate }) {
     }
 
     setLoading(true);
-    setMsg("Transcribing... This may take a while.");
+    setMsg("Enqueuing transcription task...");
     try {
       await fetch(`${apiBase}/files/${file.id}/transcribe`, { method: 'POST' });
-      setMsg("Transcription complete!");
+      setMsg("Transcription task enqueued!");
       onUpdate();
     } catch (e) {
-      setMsg("Error transcribing: " + e.message);
+      setMsg("Error enqueuing transcribe: " + e.message);
     } finally {
       setLoading(false);
     }
@@ -90,8 +94,8 @@ function SummaryTab({ file, apiBase, onUpdate }) {
     display: 'flex',
     flexDirection: 'column',
     justifyContent: 'space-between',
-    cursor: isClickable && !loading ? 'pointer' : 'default',
-    opacity: loading ? 0.7 : 1,
+    cursor: isClickable && !loading && !anyJobRunning ? 'pointer' : 'default',
+    opacity: loading || (anyJobRunning && !isClickable) ? 0.7 : 1,
     transition: 'all 0.2s',
     border: '1px solid transparent',
     textAlign: 'left',
@@ -104,7 +108,7 @@ function SummaryTab({ file, apiBase, onUpdate }) {
   });
 
   const handleItemClick = (handler, isEnabled) => {
-    if (isEnabled && !loading) {
+    if (isEnabled && !loading && !anyJobRunning) {
       handler();
     }
   };
@@ -115,13 +119,34 @@ function SummaryTab({ file, apiBase, onUpdate }) {
       
       {msg && <div className="card" style={{marginBottom: 20, color: 'var(--accent-primary)', fontWeight: 'bold'}}>{msg}</div>}
 
+      {/* Global Job Status Indicator */}
+      {jobStatus.current && (
+          <div className="card" style={{marginBottom: 20, display: 'flex', alignItems: 'center', gap: 12, borderLeft: '4px solid var(--accent-primary)'}}>
+              <div className="spinner"></div>
+              <div>
+                  <strong>Currently {jobStatus.current.type === 'transcribe' ? 'Transcribing' : 'Censoring'}:</strong> {jobStatus.current.filename}
+                  {jobStatus.queue.length > 0 && (
+                      <div style={{fontSize: '0.8rem', color: 'var(--text-secondary)', marginTop: 4}}>
+                          Next in queue: {jobStatus.queue[0].filename} ({jobStatus.queue.length} more)
+                      </div>
+                  )}
+              </div>
+          </div>
+      )}
+
+      {queuedJob && !currentJob && (
+          <div className="card" style={{marginBottom: 20, color: 'var(--text-secondary)'}}>
+              ⌛ This file is waiting in the queue...
+          </div>
+      )}
+
       <div className="stat-grid">
         {/* Box 1: Duration & Run All */}
         <button 
             className="stat-item clickable-stat" 
             style={statItemStyle(!file.transcribed)}
             onClick={() => handleItemClick(handleRunAll, !file.transcribed)}
-            disabled={loading || file.transcribed}
+            disabled={loading || anyJobRunning || file.transcribed}
         >
             <div>
                 <div className="stat-label">Duration</div>
@@ -129,7 +154,7 @@ function SummaryTab({ file, apiBase, onUpdate }) {
             </div>
             {!file.transcribed && (
                 <div style={{marginTop: 12, color: 'var(--accent-primary)', fontWeight: 'bold', fontSize: '0.9rem'}}>
-                    → Run All Steps
+                    {anyJobRunning ? 'Busy...' : '→ Run All Steps'}
                 </div>
             )}
         </button>
@@ -139,7 +164,7 @@ function SummaryTab({ file, apiBase, onUpdate }) {
             className="stat-item clickable-stat" 
             style={statItemStyle(!file.transcribed)}
             onClick={() => handleItemClick(handleTranscribe, !file.transcribed)}
-            disabled={loading || file.transcribed}
+            disabled={loading || anyJobRunning || file.transcribed}
         >
             <div className="stat-label">1. Transcription</div>
             <div style={{marginTop: 12}}>
@@ -147,7 +172,7 @@ function SummaryTab({ file, apiBase, onUpdate }) {
                     <div style={{color: 'var(--success)', fontWeight: 'bold', fontSize: '1.2rem'}}>✓ Complete</div>
                 ) : (
                     <div className="stat-value" style={{fontSize: '1.2rem'}}>
-                        Start Transcription
+                        {isThisFileBusy ? 'In Progress...' : 'Start Transcription'}
                         <div style={{fontSize: '0.8rem', color: 'var(--text-secondary)', fontWeight: 'normal', marginTop: 4}}>
                             (~{file.duration ? getTimeStr(file.duration * 0.08) : "?"})
                         </div>
@@ -161,7 +186,7 @@ function SummaryTab({ file, apiBase, onUpdate }) {
             className="stat-item clickable-stat" 
             style={statItemStyle(file.transcribed && (!file.censored || file.is_out_of_date))}
             onClick={() => handleItemClick(handleCensor, file.transcribed && (!file.censored || file.is_out_of_date))}
-            disabled={loading || !file.transcribed || (file.censored && !file.is_out_of_date)}
+            disabled={loading || anyJobRunning || !file.transcribed || (file.censored && !file.is_out_of_date)}
         >
             <div className="stat-label">2. Censoring</div>
             <div style={{marginTop: 12}}>
@@ -174,7 +199,7 @@ function SummaryTab({ file, apiBase, onUpdate }) {
                     </div>
                 ) : (
                     <div className="stat-value" style={{fontSize: '1.2rem'}}>
-                        {file.is_out_of_date ? "Regenerate" : "Start Censoring"}
+                        {isThisFileBusy ? 'In Progress...' : (file.is_out_of_date ? "Regenerate" : "Start Censoring")}
                         <div style={{fontSize: '0.8rem', color: (file.is_out_of_date ? 'var(--warning)' : 'var(--text-secondary)'), fontWeight: 'normal', marginTop: 4}}>
                             ~{file.duration ? getTimeStr(file.duration * 0.03) : "?"} 
                             {file.is_out_of_date ? " (Out of Date)" : ""}
