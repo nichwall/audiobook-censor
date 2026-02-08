@@ -11,10 +11,25 @@ class JobManager:
         self.transcript_dir = transcript_dir
         self.global_blocklist = global_blocklist
         self.global_allowlist = global_allowlist
+        self.stats_file = os.path.join(os.path.dirname(jobs_file), "stats.json")
         self.status = {"current": None}
         self.next_job = None
-        self.lock = threading.Lock()
+        self.lock = threading.RLock()
+        
+        # Default factors: audio_duration * factor = runtime
+        self.default_factors = {
+            "transcribe": 0.08,
+            "censor": 0.03,
+            "full_workflow": 0.11
+        }
+        self.stats = {
+            "transcribe": [],
+            "censor": [],
+            "full_workflow": []
+        }
+        
         self.load_status()
+        self.load_stats()
         
         # Start background worker
         self.worker_thread = threading.Thread(target=self._worker_loop, daemon=True)
@@ -32,8 +47,39 @@ class JobManager:
                 pass
 
     def save_status(self):
-        with open(self.jobs_file, "w") as f:
-            json.dump(self.status, f, indent=2)
+        with self.lock:
+            with open(self.jobs_file, "w") as f:
+                json.dump(self.status, f, indent=2)
+
+    def load_stats(self):
+        if os.path.exists(self.stats_file):
+            try:
+                with open(self.stats_file, "r") as f:
+                    self.stats.update(json.load(f))
+            except:
+                pass
+
+    def save_stats(self):
+        with self.lock:
+            with open(self.stats_file, "w") as f:
+                json.dump(self.stats, f, indent=2)
+
+    def get_factor(self, job_type):
+        with self.lock:
+            history = self.stats.get(job_type, [])
+            if not history:
+                return self.default_factors.get(job_type, 0.1)
+            return sum(history) / len(history)
+
+    def record_run(self, job_type, duration, runtime):
+        if not duration or duration <= 0: return
+        factor = runtime / duration
+        with self.lock:
+            history = self.stats.setdefault(job_type, [])
+            history.append(factor)
+            if len(history) > 5:
+                history.pop(0)
+            self.save_stats()
 
     def enqueue(self, file_id, filename, job_type, input_path=None, output_path=None, base_no_ext=None, duration=None):
         with self.lock:
@@ -67,8 +113,14 @@ class JobManager:
                     self.save_status()
             
             if job:
+                start_time = time.time()
                 try:
                     self._run_job(job)
+                    duration = job.get("duration")
+                    if duration:
+                        runtime = time.time() - start_time
+                        self.record_run(job["type"], duration, runtime)
+                        
                     with self.lock:
                         self.status["current"] = None
                         self.save_status()

@@ -62,6 +62,8 @@ class FileStatus(BaseModel):
     transcribed: bool
     censored: bool
     is_out_of_date: bool = False
+    est_transcribe_duration: int = 0
+    est_censor_duration: int = 0
 
 class OverrideUpdate(BaseModel):
     start_time: float
@@ -153,7 +155,9 @@ def list_files():
             duration=duration,
             transcribed=is_transcribed,
             censored=is_censored,
-            is_out_of_date=is_out_of_date
+            is_out_of_date=is_out_of_date,
+            est_transcribe_duration=int(duration * job_manager.get_factor("transcribe")),
+            est_censor_duration=int(duration * job_manager.get_factor("censor"))
         ))
     
     if updated:
@@ -361,7 +365,15 @@ def get_jobs_status():
     if st.get("current"):
         # Strip internal fields for the frontend
         public_fields = ["file_id", "filename", "type", "duration", "started_at"]
-        st["current"] = {k: v for k, v in st["current"].items() if k in public_fields}
+        clean_job = {k: v for k, v in st["current"].items() if k in public_fields}
+        
+        # Calculate estimate on the backend
+        duration = clean_job.get("duration", 0)
+        started_at = clean_job.get("started_at", 0)
+        factor = job_manager.get_factor(clean_job["type"])
+        clean_job["calculated_est_end_at"] = started_at + (duration * factor)
+        
+        st["current"] = clean_job
     return st
 
 @app.post("/api/files/{id}/overrides/bulk")

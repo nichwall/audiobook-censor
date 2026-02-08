@@ -8,7 +8,7 @@ function SummaryTab({ file, apiBase, onUpdate, jobStatus }) {
   const isThisFileBusy = !!currentJob;
 
   const handleRunAll = async () => {
-    const est = (file.duration || 0) * 0.11;
+    const est = (file.est_transcribe_duration || 0) + (file.est_censor_duration || 0); // Using sum for workflow est in confirm
     if (est > 10) {
       if (!window.confirm(`This full workflow will take approximately ${getTimeStr(est)}. Continue?`)) return;
     }
@@ -25,7 +25,7 @@ function SummaryTab({ file, apiBase, onUpdate, jobStatus }) {
   };
 
   const handleCensor = async () => {
-    const est = (file.duration || 0) * 0.03;
+    const est = file.est_censor_duration;
     if (est > 10) {
       if (!window.confirm(`Censoring will take approximately ${getTimeStr(est)}. Continue?`)) return;
     }
@@ -42,7 +42,7 @@ function SummaryTab({ file, apiBase, onUpdate, jobStatus }) {
   };
 
   const handleTranscribe = async () => {
-    const est = (file.duration || 0) * 0.08;
+    const est = file.est_transcribe_duration;
     if (est > 10) {
       if (!window.confirm(`Transcription will take approximately ${getTimeStr(est)}. Continue?`)) return;
     }
@@ -71,19 +71,18 @@ function SummaryTab({ file, apiBase, onUpdate, jobStatus }) {
     return parts.join(' ');
   };
 
-  const formatTime = (timestamp) => {
+  const formatTimeMinutesOnly = (timestamp, roundDir) => {
       if (!timestamp) return "N/A";
-      const date = new Date(timestamp * 1000);
-      return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+      let t = timestamp;
+      if (roundDir === 'down') t = Math.floor(t / 60) * 60;
+      else if (roundDir === 'up') t = Math.ceil(t / 60) * 60;
+      
+      const date = new Date(t * 1000);
+      return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
   };
 
   const getEstimatedEndTime = (job) => {
-      if (!job || !job.started_at || !job.duration) return null;
-      let factor = 0.01;
-      if (job.type === 'transcribe') factor = 0.08;
-      else if (job.type === 'censor') factor = 0.03;
-      else if (job.type === 'full_workflow') factor = 0.11;
-      return job.started_at + (job.duration * factor);
+      return job?.calculated_est_end_at || null;
   };
 
   const statItemStyle = (isClickable) => ({
@@ -123,9 +122,9 @@ function SummaryTab({ file, apiBase, onUpdate, jobStatus }) {
                       <span style={{fontSize: '0.8rem', color: 'var(--text-secondary)'}}>{jobStatus.current.filename}</span>
                   </div>
                   <div style={{display: 'flex', gap: 16, marginTop: 8, fontSize: '0.85rem'}}>
-                      <div><span style={{color: 'var(--text-secondary)'}}>Started:</span> {formatTime(jobStatus.current.started_at)}</div>
+                      <div><span style={{color: 'var(--text-secondary)'}}>Started:</span> {formatTimeMinutesOnly(jobStatus.current.started_at, 'down')}</div>
                       {jobStatus.current.duration && (
-                          <div><span style={{color: 'var(--text-secondary)'}}>Est. End:</span> {formatTime(getEstimatedEndTime(jobStatus.current))}</div>
+                          <div><span style={{color: 'var(--text-secondary)'}}>Est. End:</span> {formatTimeMinutesOnly(getEstimatedEndTime(jobStatus.current), 'up')}</div>
                       )}
                   </div>
               </div>
@@ -166,7 +165,7 @@ function SummaryTab({ file, apiBase, onUpdate, jobStatus }) {
                     <div className="stat-value" style={{fontSize: '1.2rem'}}>
                         {isThisFileBusy ? 'In Progress...' : 'Start Transcription'}
                         <div style={{fontSize: '0.8rem', color: 'var(--text-secondary)', fontWeight: 'normal', marginTop: 4}}>
-                            (~{file.duration ? getTimeStr(file.duration * 0.08) : "?"})
+                            (~{getTimeStr(file.est_transcribe_duration)})
                         </div>
                     </div>
                 )}
@@ -193,7 +192,7 @@ function SummaryTab({ file, apiBase, onUpdate, jobStatus }) {
                     <div className="stat-value" style={{fontSize: '1.2rem'}}>
                         {isThisFileBusy ? 'In Progress...' : (file.is_out_of_date ? "Regenerate" : "Start Censoring")}
                         <div style={{fontSize: '0.8rem', color: (file.is_out_of_date ? 'var(--warning)' : 'var(--text-secondary)'), fontWeight: 'normal', marginTop: 4}}>
-                            ~{file.duration ? getTimeStr(file.duration * 0.03) : "?"} 
+                            ~{getTimeStr(file.est_censor_duration)} 
                             {file.is_out_of_date ? " (Out of Date)" : ""}
                         </div>
                     </div>
