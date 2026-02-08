@@ -15,6 +15,7 @@ function App() {
   const [jobStatus, setJobStatus] = useState({ current: null });
   
   const pollingTimeoutRef = useRef(null);
+  const prevJobRef = useRef(null);
 
   // Fetch files whenever refreshTrigger changes
   useEffect(() => {
@@ -53,9 +54,6 @@ function App() {
         console.error("Poll jobs failed:", err);
       }
       
-      // Trigger file list refresh
-      setRefreshTrigger(p => p + 1);
-      
       // Schedule next poll
       pollingTimeoutRef.current = setTimeout(poll, 30000);
     };
@@ -78,6 +76,20 @@ function App() {
       }
     };
   }, []);
+
+  // Trigger file refresh when a job completes
+  useEffect(() => {
+    const prevJob = prevJobRef.current;
+    const currentJob = jobStatus.current;
+    
+    // Check for transition from "busy" (having a job) to "idle" (no job)
+    if (prevJob && !currentJob) {
+      console.log("Job completed, refreshing files...");
+      setRefreshTrigger(p => p + 1);
+    }
+    
+    prevJobRef.current = currentJob;
+  }, [jobStatus.current]);
 
   // Handle browser back/forward buttons
   useEffect(() => {
