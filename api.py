@@ -58,11 +58,9 @@ def get_file_path(file_id: str, mapping: dict):
 class FileStatus(BaseModel):
     id: str
     filename: str
-    size_bytes: int
-    duration: Optional[float] = None
+    duration: Optional[int] = 0
     transcribed: bool
     censored: bool
-    censored_at: Optional[float] = None # Timestamp
     is_out_of_date: bool = False
 
 class OverrideUpdate(BaseModel):
@@ -147,16 +145,14 @@ def list_files():
         try:
              duration = censor_app.get_audio_duration(fpath)
         except:
-             duration = None
+             duration = 0
 
         files.append(FileStatus(
             id=file_id,
             filename=rel_path,
-            size_bytes=os.path.getsize(fpath),
             duration=duration,
             transcribed=is_transcribed,
             censored=is_censored,
-            censored_at=censored_at,
             is_out_of_date=is_out_of_date
         ))
     
@@ -178,7 +174,7 @@ def transcribe_file(id: str):
     except:
         duration = None
         
-    job_id = job_manager.enqueue(id, filename, "transcribe", input_path=fpath, base_no_ext=base_no_ext, duration=duration)
+    job_id = job_manager.enqueue(id, filename, "transcribe", input_path=fpath, base_no_ext=base_no_ext, duration=int(duration or 0))
     if not job_id:
         raise HTTPException(status_code=429, detail="Server is currently busy with another task")
     return {"status": "success", "job_id": job_id, "message": "Transcription started"}
@@ -196,7 +192,7 @@ def run_full_workflow(id: str):
     except:
         duration = None
         
-    job_id = job_manager.enqueue(id, filename, "full_workflow", input_path=fpath, output_path=output_file, base_no_ext=base_no_ext, duration=duration)
+    job_id = job_manager.enqueue(id, filename, "full_workflow", input_path=fpath, output_path=output_file, base_no_ext=base_no_ext, duration=int(duration or 0))
     if not job_id:
         raise HTTPException(status_code=429, detail="Server is currently busy with another task")
     return {"status": "success", "job_id": job_id, "message": "Full workflow started"}
@@ -336,7 +332,7 @@ def prepare_censor(id: str):
     except:
         duration = None
 
-    job_id = job_manager.enqueue(id, filename, "prepare", base_no_ext=base_no_ext, duration=duration)
+    job_id = job_manager.enqueue(id, filename, "prepare", base_no_ext=base_no_ext, duration=int(duration or 0))
     if not job_id:
         raise HTTPException(status_code=429, detail="Server is currently busy with another task")
     return {"status": "success", "job_id": job_id, "message": "Rule matching started"}
@@ -354,7 +350,7 @@ def censor_file(id: str):
     except:
         duration = None
 
-    job_id = job_manager.enqueue(id, filename, "censor", input_path=fpath, output_path=output_file, base_no_ext=base_no_ext, duration=duration)
+    job_id = job_manager.enqueue(id, filename, "censor", input_path=fpath, output_path=output_file, base_no_ext=base_no_ext, duration=int(duration or 0))
     if not job_id:
         raise HTTPException(status_code=429, detail="Server is currently busy with another task")
     return {"status": "success", "job_id": job_id, "message": "Censoring started"}

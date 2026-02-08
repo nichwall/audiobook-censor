@@ -128,7 +128,7 @@ class AudiobookCensor:
             "-of", "default=noprint_wrappers=1:nokey=1",
             filename
         ])
-        return float(probe.strip())
+        return int(float(probe.strip()))
 
     def transcript_path(self, basename):
          return os.path.join(self.transcript_dir, basename + "_timestamps.json")
