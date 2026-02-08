@@ -72,6 +72,17 @@ class OverrideUpdate(BaseModel):
 class ListUpdate(BaseModel):
     content: str
     
+import hashlib
+
+def get_file_hash(path):
+    if not os.path.exists(path):
+        return ""
+    with open(path, "rb") as f:
+        return hashlib.md5(f.read()).hexdigest()
+
+def get_censor_metadata_path(base_no_ext):
+    return os.path.join(TRANSCRIPT_DIR, base_no_ext + "_censor_meta.json")
+
 @app.get("/api/files", response_model=List[FileStatus])
 def list_files():
     mapping = load_mapping()
@@ -88,12 +99,9 @@ def list_files():
         pattern = os.path.join(INPUT_DIR, "**", ext)
         audio_files.extend(glob.glob(pattern, recursive=True))
     
-    # Get global config mtimes
-    global_mtime = 0
-    if os.path.exists(GLOBAL_BLOCKLIST):
-        global_mtime = max(global_mtime, os.path.getmtime(GLOBAL_BLOCKLIST))
-    if os.path.exists(GLOBAL_ALLOWLIST):
-        global_mtime = max(global_mtime, os.path.getmtime(GLOBAL_ALLOWLIST))
+    # Get current global config hashes
+    current_block_hash = get_file_hash(GLOBAL_BLOCKLIST)
+    current_allow_hash = get_file_hash(GLOBAL_ALLOWLIST)
 
     updated = False
     for fpath in audio_files:
@@ -118,16 +126,22 @@ def list_files():
         is_censored = os.path.exists(output_path)
         censored_at = os.path.getmtime(output_path) if is_censored else None
         
-        # Check overrides
+        # Check overrides hash
         overrides_path = os.path.join(TRANSCRIPT_DIR, base_no_ext + "_overrides.json")
-        overrides_mtime = 0
-        if os.path.exists(overrides_path):
-            overrides_mtime = os.path.getmtime(overrides_path)
+        current_overrides_hash = get_file_hash(overrides_path)
             
         is_out_of_date = False
         if is_censored:
-            last_config_change = max(global_mtime, overrides_mtime)
-            if censored_at < last_config_change:
+            meta_path = get_censor_metadata_path(base_no_ext)
+            if os.path.exists(meta_path):
+                with open(meta_path, "r") as f:
+                    meta = json.load(f)
+                if (meta.get("blocklist_hash") != current_block_hash or 
+                    meta.get("allowlist_hash") != current_allow_hash or
+                    meta.get("overrides_hash") != current_overrides_hash):
+                    is_out_of_date = True
+            else:
+                # No metadata means we don't know, so assume it might be old (fallback to timestamp if needed, but let's encourage a re-run)
                 is_out_of_date = True
 
         try:

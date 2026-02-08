@@ -117,6 +117,22 @@ class JobManager:
             self.censor_app.generate_censored_audio(
                 job["input_path"], final_intervals, job["output_path"]
             )
+            
+            # Save metadata hashes
+            import hashlib
+            def get_h(p):
+                if not os.path.exists(p): return ""
+                with open(p, "rb") as f: return hashlib.md5(f.read()).hexdigest()
+            
+            meta = {
+                "blocklist_hash": get_h(self.global_blocklist),
+                "allowlist_hash": get_h(self.global_allowlist),
+                "overrides_hash": get_h(overrides_path),
+                "censored_at": time.time()
+            }
+            meta_path = os.path.join(self.transcript_dir, job["base_no_ext"] + "_censor_meta.json")
+            with open(meta_path, "w") as f:
+                json.dump(meta, f, indent=2)
         elif job_type == "prepare":
              self.censor_app.calculate_matches_with_cache(
                 job["base_no_ext"], self.global_blocklist, self.global_allowlist

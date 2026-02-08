@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 
-function ListsTab({ apiBase }) {
+function ListsTab({ apiBase, onUpdate }) {
   const [blocklist, setBlocklist] = useState("");
   const [allowlist, setAllowlist] = useState("");
   const [status, setStatus] = useState("");
@@ -23,6 +23,7 @@ function ListsTab({ apiBase }) {
         body: JSON.stringify({ blocklist, allowlist })
       });
       setStatus("Saved!");
+      if (onUpdate) onUpdate();
       setTimeout(() => setStatus(""), 2000);
     } catch (e) {
       setStatus("Error saving");

@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 
-function SearchTab({ file, apiBase }) {
+function SearchTab({ file, apiBase, onUpdate }) {
   const [query, setQuery] = useState("");
   const [results, setResults] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -72,6 +72,7 @@ function SearchTab({ file, apiBase }) {
           body: JSON.stringify({ ...config, blocklist: newBlocklist })
         });
         setStatus(`"${word}" added to blocklist!`);
+        if (onUpdate) onUpdate();
         fetchBlocklist(); // Refresh local list
       } else {
         setStatus(`"${word}" is already in blocklist.`);

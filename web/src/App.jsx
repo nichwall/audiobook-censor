@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import Sidebar from './components/Sidebar';
 import SummaryTab from './components/SummaryTab';
 import ListsTab from './components/ListsTab';
@@ -13,35 +13,49 @@ function App() {
   const [activeTab, setActiveTab] = useState('summary');
   const [refreshTrigger, setRefreshTrigger] = useState(0);
   const [jobStatus, setJobStatus] = useState({ current: null, queue: [] });
+  
   const pollingTimeoutRef = useRef(null);
+  const isFetchingRef = useRef(false);
 
-  const pollJobs = () => {
-    if (pollingTimeoutRef.current) clearTimeout(pollingTimeoutRef.current);
+  const pollJobs = useCallback(async () => {
+    if (isFetchingRef.current) return;
     
-    fetch(`${API_BASE}/jobs/status`)
-        .then(res => res.json())
-        .then(data => {
-            setJobStatus(prev => {
-                const wasBusy = prev.current || prev.queue.length > 0;
-                const isBusy = data.current || data.queue.length > 0;
-                
-                if (wasBusy && !isBusy) {
-                    // Just finished a job, refresh file listings
-                    setRefreshTrigger(p => p + 1);
-                }
-                
-                // Set next polling interval: 5s if busy, 60s if idle
-                const nextInterval = isBusy ? 5000 : 60000;
-                pollingTimeoutRef.current = setTimeout(pollJobs, nextInterval);
-                
-                return data;
-            });
-        })
-        .catch(err => {
-            console.error("Poll jobs failed:", err);
-            pollingTimeoutRef.current = setTimeout(pollJobs, 60000);
+    // Clear existing timeout to prevent overlap
+    if (pollingTimeoutRef.current) {
+        clearTimeout(pollingTimeoutRef.current);
+        pollingTimeoutRef.current = null;
+    }
+
+    isFetchingRef.current = true;
+    try {
+        const res = await fetch(`${API_BASE}/jobs/status`);
+        const data = await res.json();
+        
+        let shouldRefreshFiles = false;
+        setJobStatus(prev => {
+            const wasBusy = !!(prev.current || prev.queue.length > 0);
+            const isBusy = !!(data.current || data.queue.length > 0);
+            
+            if (wasBusy && !isBusy) {
+                shouldRefreshFiles = true;
+            }
+            return data;
         });
-  };
+
+        if (shouldRefreshFiles) {
+            setRefreshTrigger(p => p + 1);
+        }
+
+        const isBusy = !!(data.current || data.queue.length > 0);
+        const nextInterval = isBusy ? 5000 : 60000;
+        pollingTimeoutRef.current = setTimeout(pollJobs, nextInterval);
+    } catch (err) {
+        console.error("Poll jobs failed:", err);
+        pollingTimeoutRef.current = setTimeout(pollJobs, 60000);
+    } finally {
+        isFetchingRef.current = false;
+    }
+  }, []);
 
   useEffect(() => {
     fetch(`${API_BASE}/files`)
@@ -56,10 +70,12 @@ function App() {
         if (fileParam) {
            const found = data.find(f => f.id === fileParam);
            if (found) setSelectedFile(found);
+           else setSelectedFile(null); // Clear if not found
         } else if (selectedFile) {
            // Refresh existing selection data
            const updated = data.find(f => f.id === selectedFile.id);
            if (updated) setSelectedFile(updated);
+           else setSelectedFile(null);
         }
       })
       .catch(err => console.error(err));
@@ -71,7 +87,7 @@ function App() {
     return () => {
         if (pollingTimeoutRef.current) clearTimeout(pollingTimeoutRef.current);
     };
-  }, []);
+  }, [pollJobs]);
 
   // Handle browser back/forward buttons
   useEffect(() => {
@@ -163,6 +179,7 @@ function App() {
               {activeTab === 'lists' && (
                 <ListsTab 
                   apiBase={API_BASE}
+                  onUpdate={refreshData}
                 />
               )}
               {activeTab === 'rules' && (
@@ -175,6 +192,7 @@ function App() {
                 <SearchTab 
                   file={selectedFile}
                   apiBase={API_BASE}
+                  onUpdate={refreshData}
                 />
               )}
             </div>
