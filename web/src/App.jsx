@@ -15,48 +15,8 @@ function App() {
   const [jobStatus, setJobStatus] = useState({ current: null, queue: [] });
   
   const pollingTimeoutRef = useRef(null);
-  const isFetchingRef = useRef(false);
 
-  const pollJobs = useCallback(async () => {
-    if (isFetchingRef.current) return;
-    
-    // Clear existing timeout to prevent overlap
-    if (pollingTimeoutRef.current) {
-        clearTimeout(pollingTimeoutRef.current);
-        pollingTimeoutRef.current = null;
-    }
-
-    isFetchingRef.current = true;
-    try {
-        const res = await fetch(`${API_BASE}/jobs/status`);
-        const data = await res.json();
-        
-        let shouldRefreshFiles = false;
-        setJobStatus(prev => {
-            const wasBusy = !!(prev.current || prev.queue.length > 0);
-            const isBusy = !!(data.current || data.queue.length > 0);
-            
-            if (wasBusy && !isBusy) {
-                shouldRefreshFiles = true;
-            }
-            return data;
-        });
-
-        if (shouldRefreshFiles) {
-            setRefreshTrigger(p => p + 1);
-        }
-
-        const isBusy = !!(data.current || data.queue.length > 0);
-        const nextInterval = isBusy ? 5000 : 60000;
-        pollingTimeoutRef.current = setTimeout(pollJobs, nextInterval);
-    } catch (err) {
-        console.error("Poll jobs failed:", err);
-        pollingTimeoutRef.current = setTimeout(pollJobs, 60000);
-    } finally {
-        isFetchingRef.current = false;
-    }
-  }, []);
-
+  // Fetch files whenever refreshTrigger changes
   useEffect(() => {
     fetch(`${API_BASE}/files`)
       .then(res => res.json())
@@ -81,13 +41,37 @@ function App() {
       .catch(err => console.error(err));
   }, [refreshTrigger]);
 
-  // Initial poll on mount
+  // Simple polling mechanism - refresh file list and job status every 30 seconds
   useEffect(() => {
-    pollJobs();
-    return () => {
-        if (pollingTimeoutRef.current) clearTimeout(pollingTimeoutRef.current);
+    const poll = async () => {
+      
+      // Fetch job status
+      try {
+        const res = await fetch(`${API_BASE}/jobs/status`);
+        const data = await res.json();
+        setJobStatus(data);
+      } catch (err) {
+        console.error("Poll jobs failed:", err);
+      }
+      
+      // Trigger file list refresh
+      setRefreshTrigger(p => p + 1);
+      
+      // Schedule next poll
+      pollingTimeoutRef.current = setTimeout(poll, 30000);
     };
-  }, [pollJobs]);
+
+    // Start polling on mount
+    poll();
+    
+    // Cleanup on unmount
+    return () => {
+      if (pollingTimeoutRef.current) {
+        clearTimeout(pollingTimeoutRef.current);
+        pollingTimeoutRef.current = null;
+      }
+    };
+  }, []);
 
   // Handle browser back/forward buttons
   useEffect(() => {
@@ -119,8 +103,6 @@ function App() {
 
   const refreshData = () => {
     setRefreshTrigger(prev => prev + 1);
-    // Trigger immediate poll when a task is started
-    pollJobs();
   };
 
   return (
