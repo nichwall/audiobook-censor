@@ -17,6 +17,28 @@ function App() {
   const pollingTimeoutRef = useRef(null);
   const prevJobRef = useRef(null);
 
+  const pollJobs = useCallback(async (delay = 30000) => {
+    // Clear any existing timeout to avoid overlaps
+    if (pollingTimeoutRef.current) {
+        clearTimeout(pollingTimeoutRef.current);
+    }
+
+    const executePoll = async () => {
+        try {
+            const res = await fetch(`${API_BASE}/jobs/status`);
+            const data = await res.json();
+            setJobStatus(data);
+        } catch (err) {
+            console.error("Poll jobs failed:", err);
+        }
+        
+        // Schedule next regular poll
+        pollingTimeoutRef.current = setTimeout(() => executePoll(), 30000);
+    };
+
+    pollingTimeoutRef.current = setTimeout(executePoll, delay);
+  }, []);
+
   // Fetch files whenever refreshTrigger changes
   useEffect(() => {
     fetch(`${API_BASE}/files`)
@@ -42,31 +64,16 @@ function App() {
       .catch(err => console.error(err));
   }, [refreshTrigger]);
 
-  // Simple polling mechanism - refresh file list and job status every 30 seconds
+  // Refresh file list and job status on mount
   useEffect(() => {
-    const poll = async () => {
-      // Fetch job status
-      try {
-        const res = await fetch(`${API_BASE}/jobs/status`);
-        const data = await res.json();
-        setJobStatus(data);
-      } catch (err) {
-        console.error("Poll jobs failed:", err);
-      }
-      
-      // Schedule next poll
-      pollingTimeoutRef.current = setTimeout(poll, 30000);
-    };
-
-    // For the initial load, we only need to fetch job status
-    // since files are already being fetched by the refreshTrigger[0] effect
+    // Initial status fetch
     fetch(`${API_BASE}/jobs/status`)
       .then(res => res.json())
       .then(setJobStatus)
       .catch(() => {});
 
-    // Schedule the first poll for 30 seconds later
-    pollingTimeoutRef.current = setTimeout(poll, 30000);
+    // Start the 30s heartbeat
+    pollJobs(30000);
     
     // Cleanup on unmount
     return () => {
@@ -75,7 +82,7 @@ function App() {
         pollingTimeoutRef.current = null;
       }
     };
-  }, []);
+  }, [pollJobs]);
 
   // Trigger file refresh when a job completes
   useEffect(() => {
@@ -121,6 +128,8 @@ function App() {
 
   const refreshData = () => {
     setRefreshTrigger(prev => prev + 1);
+    // Restart polling with a short 2-second delay to catch the new job status
+    pollJobs(2000);
   };
 
   return (
