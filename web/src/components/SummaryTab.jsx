@@ -68,15 +68,6 @@ function SummaryTab({ file, apiBase, onUpdate, jobStatus }) {
     }
   };
 
-  const formatDuration = (seconds) => {
-    const totalSeconds = Math.floor(seconds);
-    const h = Math.floor(totalSeconds / 3600);
-    const m = Math.floor((totalSeconds % 3600) / 60);
-    const s = totalSeconds % 60;
-    if (h > 0) return `${h}h ${m}m ${s}s`;
-    return `${m}m ${s}s`;
-  };
-
   const getTimeStr = (seconds) => {
     const totalSeconds = Math.floor(seconds);
     const h = Math.floor(totalSeconds / 3600);
@@ -171,7 +162,7 @@ function SummaryTab({ file, apiBase, onUpdate, jobStatus }) {
         >
             <div>
                 <div className="stat-label">Duration</div>
-                <div className="stat-value">{file.duration ? formatDuration(file.duration) : "Unknown"}</div>
+                <div className="stat-value">{file.duration ? getTimeStr(file.duration) : "Unknown"}</div>
             </div>
             {!file.transcribed && (
                 <div style={{marginTop: 12, color: 'var(--accent-primary)', fontWeight: 'bold', fontSize: '0.9rem'}}>
