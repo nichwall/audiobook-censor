@@ -44,7 +44,6 @@ function App() {
   // Simple polling mechanism - refresh file list and job status every 30 seconds
   useEffect(() => {
     const poll = async () => {
-      
       // Fetch job status
       try {
         const res = await fetch(`${API_BASE}/jobs/status`);
@@ -61,8 +60,15 @@ function App() {
       pollingTimeoutRef.current = setTimeout(poll, 30000);
     };
 
-    // Start polling on mount
-    poll();
+    // For the initial load, we only need to fetch job status
+    // since files are already being fetched by the refreshTrigger[0] effect
+    fetch(`${API_BASE}/jobs/status`)
+      .then(res => res.json())
+      .then(setJobStatus)
+      .catch(() => {});
+
+    // Schedule the first poll for 30 seconds later
+    pollingTimeoutRef.current = setTimeout(poll, 30000);
     
     // Cleanup on unmount
     return () => {
