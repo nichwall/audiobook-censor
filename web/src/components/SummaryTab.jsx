@@ -5,26 +5,23 @@ function SummaryTab({ file, apiBase, onUpdate, jobStatus }) {
   const [msg, setMsg] = useState("");
 
   const currentJob = jobStatus.current && jobStatus.current.file_id === file.id ? jobStatus.current : null;
-  const queuedJob = !currentJob ? jobStatus.queue.find(q => q.file_id === file.id) : null;
   const anyJobRunning = !!jobStatus.current;
-  const isThisFileBusy = !!(currentJob || queuedJob);
+  const isThisFileBusy = !!currentJob;
 
   const handleRunAll = async () => {
-    const est = (file.duration || 0) * (0.08 + 0.03);
+    const est = (file.duration || 0) * 0.11;
     if (est > 10) {
       if (!window.confirm(`This full workflow will take approximately ${getTimeStr(est)}. Continue?`)) return;
     }
 
     setLoading(true);
-    setMsg("Enqueuing full workflow...");
+    setMsg("Starting full workflow...");
     try {
-      // For Run All, we'll enqueue both steps
-      await fetch(`${apiBase}/files/${file.id}/transcribe`, { method: 'POST' });
-      await fetch(`${apiBase}/files/${file.id}/censor`, { method: 'POST' });
-      setMsg("Full workflow enqueued!");
+      await fetch(`${apiBase}/files/${file.id}/workflow`, { method: 'POST' });
+      setMsg("Full workflow started!");
       onUpdate();
     } catch (e) {
-      setMsg("Error enqueuing workflow: " + e.message);
+      setMsg("Error starting workflow: " + e.message);
     } finally {
       setLoading(false);
     }
@@ -37,13 +34,13 @@ function SummaryTab({ file, apiBase, onUpdate, jobStatus }) {
     }
 
     setLoading(true);
-    setMsg("Enqueuing censoring task...");
+    setMsg("Starting censoring task...");
     try {
         await fetch(`${apiBase}/files/${file.id}/censor`, { method: 'POST' });
-        setMsg("Censoring task enqueued!");
+        setMsg("Censoring task started!");
         onUpdate();
     } catch (e) {
-        setMsg("Error enqueuing censor: " + e.message);
+        setMsg("Error starting censor: " + e.message);
     } finally {
         setLoading(false);
     }
@@ -56,13 +53,13 @@ function SummaryTab({ file, apiBase, onUpdate, jobStatus }) {
     }
 
     setLoading(true);
-    setMsg("Enqueuing transcription task...");
+    setMsg("Starting transcription task...");
     try {
       await fetch(`${apiBase}/files/${file.id}/transcribe`, { method: 'POST' });
-      setMsg("Transcription task enqueued!");
+      setMsg("Transcription task started!");
       onUpdate();
     } catch (e) {
-      setMsg("Error enqueuing transcribe: " + e.message);
+      setMsg("Error starting transcribe: " + e.message);
     } finally {
       setLoading(false);
     }
@@ -89,7 +86,10 @@ function SummaryTab({ file, apiBase, onUpdate, jobStatus }) {
 
   const getEstimatedEndTime = (job) => {
       if (!job || !job.started_at || !job.duration) return null;
-      const factor = job.type === 'transcribe' ? 0.08 : (job.type === 'censor' ? 0.03 : 0.01);
+      let factor = 0.01;
+      if (job.type === 'transcribe') factor = 0.08;
+      else if (job.type === 'censor') factor = 0.03;
+      else if (job.type === 'full_workflow') factor = 0.11;
       return job.started_at + (job.duration * factor);
   };
 
@@ -128,7 +128,7 @@ function SummaryTab({ file, apiBase, onUpdate, jobStatus }) {
               <div className="spinner"></div>
               <div style={{flex: 1}}>
                   <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center'}}>
-                      <strong>Currently {jobStatus.current.type === 'transcribe' ? 'Transcribing' : 'Censoring'}:</strong>
+                      <strong>Currently {jobStatus.current.type === 'transcribe' ? 'Transcribing' : (jobStatus.current.type === 'censor' ? 'Censoring' : 'Processing')}:</strong>
                       <span style={{fontSize: '0.8rem', color: 'var(--text-secondary)'}}>{jobStatus.current.filename}</span>
                   </div>
                   <div style={{display: 'flex', gap: 16, marginTop: 8, fontSize: '0.85rem'}}>
@@ -137,18 +137,7 @@ function SummaryTab({ file, apiBase, onUpdate, jobStatus }) {
                           <div><span style={{color: 'var(--text-secondary)'}}>Est. End:</span> {formatTime(getEstimatedEndTime(jobStatus.current))}</div>
                       )}
                   </div>
-                  {jobStatus.queue.length > 0 && (
-                      <div style={{fontSize: '0.8rem', color: 'var(--text-secondary)', marginTop: 8, borderTop: '1px solid var(--border-color)', paddingTop: 8}}>
-                          Next in queue: {jobStatus.queue[0].filename} ({jobStatus.queue.length} more)
-                      </div>
-                  )}
               </div>
-          </div>
-      )}
-
-      {queuedJob && !currentJob && (
-          <div className="card" style={{marginBottom: 20, color: 'var(--text-secondary)'}}>
-              ⌛ This file is waiting in the queue...
           </div>
       )}
 

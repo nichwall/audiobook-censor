@@ -179,7 +179,27 @@ def transcribe_file(id: str):
         duration = None
         
     job_id = job_manager.enqueue(id, filename, "transcribe", input_path=fpath, base_no_ext=base_no_ext, duration=duration)
-    return {"status": "success", "job_id": job_id, "message": "Transcription enqueued"}
+    if not job_id:
+        raise HTTPException(status_code=429, detail="Server is currently busy with another task")
+    return {"status": "success", "job_id": job_id, "message": "Transcription started"}
+
+@app.post("/api/files/{id}/workflow")
+def run_full_workflow(id: str):
+    mapping = load_mapping()
+    filename = get_file_path(id, mapping)
+    fpath = os.path.join(INPUT_DIR, filename)
+    base_no_ext = filename.rsplit(".", 1)[0]
+    output_file = os.path.join(OUTPUT_DIR, base_no_ext + "_censored.opus")
+    
+    try:
+        duration = censor_app.get_audio_duration(fpath)
+    except:
+        duration = None
+        
+    job_id = job_manager.enqueue(id, filename, "full_workflow", input_path=fpath, output_path=output_file, base_no_ext=base_no_ext, duration=duration)
+    if not job_id:
+        raise HTTPException(status_code=429, detail="Server is currently busy with another task")
+    return {"status": "success", "job_id": job_id, "message": "Full workflow started"}
 
 @app.get("/api/files/{id}/transcript")
 def get_transcript_for_ui(id: str):
@@ -317,7 +337,9 @@ def prepare_censor(id: str):
         duration = None
 
     job_id = job_manager.enqueue(id, filename, "prepare", base_no_ext=base_no_ext, duration=duration)
-    return {"status": "success", "job_id": job_id, "message": "Rule matching enqueued"}
+    if not job_id:
+        raise HTTPException(status_code=429, detail="Server is currently busy with another task")
+    return {"status": "success", "job_id": job_id, "message": "Rule matching started"}
 
 @app.post("/api/files/{id}/censor")
 def censor_file(id: str):
@@ -333,7 +355,9 @@ def censor_file(id: str):
         duration = None
 
     job_id = job_manager.enqueue(id, filename, "censor", input_path=fpath, output_path=output_file, base_no_ext=base_no_ext, duration=duration)
-    return {"status": "success", "job_id": job_id, "message": "Censoring enqueued"}
+    if not job_id:
+        raise HTTPException(status_code=429, detail="Server is currently busy with another task")
+    return {"status": "success", "job_id": job_id, "message": "Censoring started"}
 
 @app.get("/api/jobs/status")
 def get_jobs_status():

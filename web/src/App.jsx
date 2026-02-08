@@ -12,7 +12,7 @@ function App() {
   const [selectedFile, setSelectedFile] = useState(null);
   const [activeTab, setActiveTab] = useState('summary');
   const [refreshTrigger, setRefreshTrigger] = useState(0);
-  const [jobStatus, setJobStatus] = useState({ current: null, queue: [] });
+  const [jobStatus, setJobStatus] = useState({ current: null });
   
   const pollingTimeoutRef = useRef(null);
 
