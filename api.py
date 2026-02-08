@@ -14,14 +14,22 @@ from jobs import JobManager
 
 app = FastAPI()
 
-# Allow CORS for local development
+# Allow CORS for local development and Docker internal traffic
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=["http://localhost", "http://127.0.0.1"],
     allow_credentials=True,
-    allow_methods=["*"],
+    allow_methods=["GET", "POST", "OPTIONS"],
     allow_headers=["*"],
 )
+
+@app.middleware("http")
+async def add_security_headers(request, call_next):
+    response = await call_next(request)
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-XSS-Protection"] = "1; mode=block"
+    return response
 
 # Constants
 INPUT_DIR = "input"
@@ -46,10 +54,19 @@ def save_mapping(mapping):
         json.dump(mapping, f, indent=2)
 
 def get_file_path(file_id: str, mapping: dict):
+    # Strict ID validation (UUID-ish)
+    if not all(c in "0123456789abcdef- " for c in file_id.lower()):
+         raise HTTPException(status_code=400, detail="Invalid character in file ID")
+
     path = mapping["id_to_path"].get(file_id)
     if not path:
         raise HTTPException(status_code=404, detail="Invalid file ID")
-    # Security check: join with INPUT_DIR and ensure it's still inside
+    
+    # Path sanitization: ensure no directory traversal
+    path = os.path.normpath(path)
+    if path.startswith("..") or os.path.isabs(path):
+        raise HTTPException(status_code=403, detail="Illegal path traversal attempt")
+
     full_path = os.path.abspath(os.path.join(INPUT_DIR, path))
     if not full_path.startswith(os.path.abspath(INPUT_DIR)):
          raise HTTPException(status_code=403, detail="Access denied")

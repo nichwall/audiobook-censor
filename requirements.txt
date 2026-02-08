@@ -1,0 +1,5 @@
+fastapi
+uvicorn
+pydantic
+python-multipart
+# vosk is installed from repo in Dockerfile
