@@ -38,23 +38,19 @@ class JobManager:
     def enqueue(self, file_id, filename, job_type, input_path=None, output_path=None, base_no_ext=None, duration=None):
         with self.lock:
             if self.status["current"] or self.next_job:
-                return None # Busy
+                return False # Busy
             
             job = {
-                "id": str(uuid.uuid4()),
                 "file_id": file_id,
                 "filename": filename,
                 "type": job_type,
                 "input_path": input_path,
                 "output_path": output_path,
                 "base_no_ext": base_no_ext,
-                "duration": duration,
-                "status": "queued",
-                "progress": 0,
-                "enqueued_at": time.time()
+                "duration": duration
             }
             self.next_job = job
-            return job["id"]
+            return True
 
     def get_status(self):
         with self.lock:
@@ -67,7 +63,7 @@ class JobManager:
                 if self.next_job:
                     job = self.next_job
                     self.next_job = None
-                    self.status["current"] = {**job, "status": "running", "started_at": time.time()}
+                    self.status["current"] = {**job, "started_at": time.time()}
                     self.save_status()
             
             if job:
@@ -78,11 +74,7 @@ class JobManager:
                         self.save_status()
                 except Exception as e:
                     print(f"Job failed: {e}")
-                    with self.lock:
-                        if self.status["current"]:
-                            self.status["current"]["status"] = "failed"
-                            self.status["current"]["error"] = str(e)
-                            self.save_status()
+                    # In a single-job system, we just clear and wait
                     time.sleep(5)
                     with self.lock:
                         self.status["current"] = None

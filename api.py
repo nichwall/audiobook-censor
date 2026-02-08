@@ -174,10 +174,10 @@ def transcribe_file(id: str):
     except:
         duration = None
         
-    job_id = job_manager.enqueue(id, filename, "transcribe", input_path=fpath, base_no_ext=base_no_ext, duration=int(duration or 0))
-    if not job_id:
+    success = job_manager.enqueue(id, filename, "transcribe", input_path=fpath, base_no_ext=base_no_ext, duration=int(duration or 0))
+    if not success:
         raise HTTPException(status_code=429, detail="Server is currently busy with another task")
-    return {"status": "success", "job_id": job_id, "message": "Transcription started"}
+    return {"status": "success", "message": "Transcription started"}
 
 @app.post("/api/files/{id}/workflow")
 def run_full_workflow(id: str):
@@ -192,10 +192,10 @@ def run_full_workflow(id: str):
     except:
         duration = None
         
-    job_id = job_manager.enqueue(id, filename, "full_workflow", input_path=fpath, output_path=output_file, base_no_ext=base_no_ext, duration=int(duration or 0))
-    if not job_id:
+    success = job_manager.enqueue(id, filename, "full_workflow", input_path=fpath, output_path=output_file, base_no_ext=base_no_ext, duration=int(duration or 0))
+    if not success:
         raise HTTPException(status_code=429, detail="Server is currently busy with another task")
-    return {"status": "success", "job_id": job_id, "message": "Full workflow started"}
+    return {"status": "success", "message": "Full workflow started"}
 
 @app.get("/api/files/{id}/transcript")
 def get_transcript_for_ui(id: str):
@@ -332,10 +332,10 @@ def prepare_censor(id: str):
     except:
         duration = None
 
-    job_id = job_manager.enqueue(id, filename, "prepare", base_no_ext=base_no_ext, duration=int(duration or 0))
-    if not job_id:
+    success = job_manager.enqueue(id, filename, "prepare", base_no_ext=base_no_ext, duration=int(duration or 0))
+    if not success:
         raise HTTPException(status_code=429, detail="Server is currently busy with another task")
-    return {"status": "success", "job_id": job_id, "message": "Rule matching started"}
+    return {"status": "success", "message": "Rule matching started"}
 
 @app.post("/api/files/{id}/censor")
 def censor_file(id: str):
@@ -350,14 +350,19 @@ def censor_file(id: str):
     except:
         duration = None
 
-    job_id = job_manager.enqueue(id, filename, "censor", input_path=fpath, output_path=output_file, base_no_ext=base_no_ext, duration=int(duration or 0))
-    if not job_id:
+    success = job_manager.enqueue(id, filename, "censor", input_path=fpath, output_path=output_file, base_no_ext=base_no_ext, duration=int(duration or 0))
+    if not success:
         raise HTTPException(status_code=429, detail="Server is currently busy with another task")
-    return {"status": "success", "job_id": job_id, "message": "Censoring started"}
+    return {"status": "success", "message": "Censoring started"}
 
 @app.get("/api/jobs/status")
 def get_jobs_status():
-    return job_manager.get_status()
+    st = job_manager.get_status().copy()
+    if st.get("current"):
+        # Strip internal fields for the frontend
+        public_fields = ["file_id", "filename", "type", "duration", "started_at"]
+        st["current"] = {k: v for k, v in st["current"].items() if k in public_fields}
+    return st
 
 @app.post("/api/files/{id}/overrides/bulk")
 def update_overrides_bulk(id: str, data: dict):
