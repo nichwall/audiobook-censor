@@ -2,7 +2,6 @@ import React, { useState } from 'react';
 
 function SummaryTab({ file, apiBase, onUpdate, jobStatus }) {
   const [loading, setLoading] = useState(false);
-  const [msg, setMsg] = useState("");
 
   const currentJob = jobStatus.current && jobStatus.current.file_id === file.id ? jobStatus.current : null;
   const anyJobRunning = !!jobStatus.current;
@@ -15,13 +14,11 @@ function SummaryTab({ file, apiBase, onUpdate, jobStatus }) {
     }
 
     setLoading(true);
-    setMsg("Starting full workflow...");
     try {
       await fetch(`${apiBase}/files/${file.id}/workflow`, { method: 'POST' });
-      setMsg("Full workflow started!");
       onUpdate();
     } catch (e) {
-      setMsg("Error starting workflow: " + e.message);
+      console.error("Error starting workflow: " + e.message);
     } finally {
       setLoading(false);
     }
@@ -34,13 +31,11 @@ function SummaryTab({ file, apiBase, onUpdate, jobStatus }) {
     }
 
     setLoading(true);
-    setMsg("Starting censoring task...");
     try {
         await fetch(`${apiBase}/files/${file.id}/censor`, { method: 'POST' });
-        setMsg("Censoring task started!");
         onUpdate();
     } catch (e) {
-        setMsg("Error starting censor: " + e.message);
+        console.error("Error starting censor: " + e.message);
     } finally {
         setLoading(false);
     }
@@ -53,13 +48,11 @@ function SummaryTab({ file, apiBase, onUpdate, jobStatus }) {
     }
 
     setLoading(true);
-    setMsg("Starting transcription task...");
     try {
       await fetch(`${apiBase}/files/${file.id}/transcribe`, { method: 'POST' });
-      setMsg("Transcription task started!");
       onUpdate();
     } catch (e) {
-      setMsg("Error starting transcribe: " + e.message);
+      console.error("Error starting transcribe: " + e.message);
     } finally {
       setLoading(false);
     }
@@ -119,8 +112,6 @@ function SummaryTab({ file, apiBase, onUpdate, jobStatus }) {
   return (
     <div>
       <h2 style={{marginTop: 0}}>{file.filename}</h2>
-      
-      {msg && <div className="card" style={{marginBottom: 20, color: 'var(--accent-primary)', fontWeight: 'bold'}}>{msg}</div>}
 
       {/* Global Job Status Indicator */}
       {jobStatus.current && (
