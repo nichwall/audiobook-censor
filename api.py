@@ -267,16 +267,6 @@ def get_transcript_for_ui(id: str):
     groups_list.sort(key=lambda x: x["phrase"])
     return {"groups": groups_list}
 
-@app.get("/api/files/{id}/vocabulary")
-def get_vocabulary(id: str):
-    mapping = load_mapping()
-    filename = get_file_path(id, mapping)
-    base_no_ext = filename.rsplit(".", 1)[0]
-    data = censor_app.calculate_vocab_with_cache(base_no_ext)
-    if not data:
-         raise HTTPException(status_code=404, detail="Transcription not found")
-    return data["vocab"]
-
 @app.get("/api/files/{id}/search")
 def search_words(id: str, q: str = ""):
     mapping = load_mapping()
@@ -340,23 +330,6 @@ def search_words(id: str, q: str = ""):
                     "suffix": " ".join(suffix_words)
                 })
     return results
-
-@app.post("/api/files/{id}/prepare-censor")
-def prepare_censor(id: str):
-    mapping = load_mapping()
-    filename = get_file_path(id, mapping)
-    fpath = os.path.join(INPUT_DIR, filename)
-    base_no_ext = filename.rsplit(".", 1)[0]
-    
-    try:
-        duration = censor_app.get_audio_duration(fpath)
-    except:
-        duration = None
-
-    success = job_manager.enqueue(id, filename, "prepare", base_no_ext=base_no_ext, duration=int(duration or 0))
-    if not success:
-        raise HTTPException(status_code=429, detail="Server is currently busy with another task")
-    return {"status": "success", "message": "Rule matching started"}
 
 @app.post("/api/files/{id}/censor")
 def censor_file(id: str):

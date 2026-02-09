@@ -146,11 +146,6 @@ class JobManager:
             self.censor_app.transcribe(job["input_path"], job["base_no_ext"])
             # 2. Censor
             self._do_censor(job)
-        elif job_type == "prepare":
-             self.censor_app.calculate_matches_with_cache(
-                job["base_no_ext"], self.global_blocklist, self.global_allowlist
-            )
-             self.censor_app.calculate_vocab_with_cache(job["base_no_ext"])
 
     def _do_censor(self, job):
         overrides_path = os.path.join(self.transcript_dir, job["base_no_ext"] + "_overrides.json")
