@@ -24,7 +24,7 @@ WORKDIR /app
 
 # Create a non-root user
 RUN useradd -m -s /bin/bash appuser && \
-    mkdir -p /app/input /app/output /app/transcripts && \
+    mkdir -p /app/input /app/output /app/transcripts /app/config && \
     chown -R appuser:appuser /app
 
 # Install Python dependencies (except vosk)
@@ -57,7 +57,7 @@ envsubst "\$PORT" < /etc/nginx/templates/default.conf.template > /etc/nginx/site
 ln -sf /etc/nginx/sites-available/default /etc/nginx/sites-enabled/default\n\
 \n\
 # Start FastAPI (Localhost only for isolation)\n\
-python -m uvicorn api:app --host 127.0.0.1 --port 8000 &\n\
+python -m uvicorn api:app --host 127.0.0.1 --port 8000 >> /app/config/api.log 2>&1 &\n\
 \n\
 # Start Nginx\n\
 nginx -g "daemon off;"\n\

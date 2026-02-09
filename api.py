@@ -35,10 +35,16 @@ async def add_security_headers(request, call_next):
 INPUT_DIR = "input"
 OUTPUT_DIR = "output"
 TRANSCRIPT_DIR = "transcripts"
-GLOBAL_BLOCKLIST = "blocklist.txt"
-GLOBAL_ALLOWLIST = "allowlist.txt"
-MAPPING_FILE = "file_mapping.json"
-JOBS_FILE = "jobs.json"
+CONFIG_DIR = "config"
+
+# Ensure directories exist
+for d in [INPUT_DIR, OUTPUT_DIR, TRANSCRIPT_DIR, CONFIG_DIR]:
+    os.makedirs(d, exist_ok=True)
+
+GLOBAL_BLOCKLIST = os.path.join(CONFIG_DIR, "blocklist.txt")
+GLOBAL_ALLOWLIST = os.path.join(CONFIG_DIR, "allowlist.txt")
+MAPPING_FILE = os.path.join(CONFIG_DIR, "file_mapping.json")
+JOBS_FILE = os.path.join(CONFIG_DIR, "jobs.json")
 
 censor_app = AudiobookCensor(INPUT_DIR, OUTPUT_DIR, TRANSCRIPT_DIR)
 job_manager = JobManager(JOBS_FILE, censor_app, TRANSCRIPT_DIR, GLOBAL_BLOCKLIST, GLOBAL_ALLOWLIST)
