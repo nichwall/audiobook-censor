@@ -6,7 +6,7 @@ RUN npm install
 COPY web/ ./
 RUN npm run build
 
-# Stage 2: Final runtime image (rootless)
+# Stage 2: FastAPI runtime
 FROM python:3.11-slim
 
 # Install system dependencies
@@ -21,31 +21,20 @@ RUN apt-get update && apt-get install -y \
     && rm -rf /var/lib/apt/lists/*
 
 # Create non-root user
-RUN useradd -m -s /bin/bash appuser
-
-# App directories
+RUN useradd -m appuser
 WORKDIR /app
 RUN mkdir -p \
       /app/input \
       /app/output \
       /app/transcripts \
-      /app/config \
-      /var/cache/nginx \
-      /var/log/nginx \
-      /run/nginx
-
-# Assign ownership
-RUN chown -R appuser:appuser \
-      /app \
-      /var/cache/nginx \
-      /var/log/nginx \
-      /run/nginx
+      /app/config
+RUN chown -R appuser:appuser /app
 
 # Install Python dependencies
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Install vosk (then clean build deps)
+# Install Vosk
 RUN git clone https://github.com/alphacep/vosk-api.git /tmp/vosk-api && \
     cd /tmp/vosk-api/python && \
     python setup.py install && \
@@ -56,41 +45,37 @@ RUN git clone https://github.com/alphacep/vosk-api.git /tmp/vosk-api && \
 
 # Copy backend code
 COPY --chown=appuser:appuser *.py ./
-
-# Copy frontend build
-COPY --from=build-frontend /web/dist /usr/share/nginx/html
-
-# Nginx config template (Debian-native)
 COPY nginx.conf.template /etc/nginx/templates/default.conf.template
 
-# Startup script
-RUN printf '%s\n' \
-'#!/bin/bash' \
-'set -e' \
-'' \
-'# Render nginx config' \
-'envsubst "$PORT" < /etc/nginx/templates/default.conf.template > /etc/nginx/conf.d/default.conf' \
-'' \
-'# Start FastAPI (localhost only)' \
-'python -m uvicorn api:app --host 127.0.0.1 --port 8000 >> /app/config/api.log 2>&1 &' \
-'' \
-'# Start nginx (non-root)' \
-'nginx -g "daemon off;"' \
-> /app/start.sh \
-&& chmod +x /app/start.sh \
-&& chown appuser:appuser /app/start.sh
+# Copy frontend build to Nginx public folder
+COPY --from=build-frontend /web/dist /usr/share/nginx/html
 
-# Nginx must not try to switch users
-RUN sed -i '/^user\s\+/d' /etc/nginx/nginx.conf
+# Environment variable for the frontend port (default 80)
+ENV PORT=80
 
-# Switch to non-root user
+# Wrapper script to start both services
+RUN echo '#!/bin/bash\n\
+# Substitute PORT env into nginx config\n\
+envsubst "\$PORT" < /etc/nginx/templates/default.conf.template > /etc/nginx/sites-available/default\n\
+ln -sf /etc/nginx/sites-available/default /etc/nginx/sites-enabled/default\n\
+\n\
+# Start FastAPI (Localhost only for isolation)\n\
+python -m uvicorn api:app --host 127.0.0.1 --port 8000 >> /app/config/api.log 2>&1 &\n\
+\n\
+# Start Nginx\n\
+nginx -g "daemon off;"\n\
+' > /app/start.sh && chmod +x /app/start.sh && chown appuser:appuser /app/start.sh
+
+# Adjust Nginx permissions to run as non-root
+RUN touch /var/run/nginx.pid && \
+    mkdir -p /var/cache/nginx /var/log/nginx /var/lib/nginx && \
+    chown -R appuser:appuser /var/run/nginx.pid /var/cache/nginx /var/log/nginx /etc/nginx/sites-available /etc/nginx/sites-enabled /var/lib/nginx
+
 USER appuser
 
-# Non-privileged port
-ENV PORT=8080
 EXPOSE ${PORT}
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
-  CMD curl -f http://localhost:${PORT}/ || exit 1
+    CMD curl -f http://localhost:${PORT}/ || exit 1
 
 CMD ["/app/start.sh"]

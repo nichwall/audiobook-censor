@@ -1,13 +1,15 @@
-from fastapi import FastAPI, UploadFile, File, HTTPException, Body
+from fastapi import FastAPI, HTTPException, Body
+from pathlib import Path
+from fastapi import Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse
 from pydantic import BaseModel
 import os
 import glob
-import shutil
 import json
 import uuid
-from typing import List, Dict, Optional
+from typing import List, Optional
 
 from censor import AudiobookCensor
 from jobs import JobManager
@@ -30,6 +32,25 @@ async def add_security_headers(request, call_next):
     response.headers["X-Content-Type-Options"] = "nosniff"
     response.headers["X-XSS-Protection"] = "1; mode=block"
     return response
+
+FRONTEND_DIR = Path("/app/frontend")
+
+if FRONTEND_DIR.exists():
+    # Serve static assets (JS, CSS, images)
+    app.mount(
+        "/static",
+        StaticFiles(directory=FRONTEND_DIR / "static"),
+        name="static",
+    )
+
+    # SPA fallback: serve index.html for all non-API routes
+    @app.get("/{full_path:path}")
+    async def serve_spa(full_path: str, request: Request):
+        # Let API routes 404 normally
+        if full_path.startswith("api"):
+            raise HTTPException(status_code=404, detail="Not Found")
+
+        return FileResponse(FRONTEND_DIR / "index.html")
 
 # Constants
 INPUT_DIR = "input"
