@@ -18,6 +18,7 @@ RUN apt-get update && apt-get install -y \
     build-essential \
     python3-dev \
     curl \
+    unzip \
     && rm -rf /var/lib/apt/lists/*
 
 # Create non-root user
@@ -34,14 +35,19 @@ RUN chown -R appuser:appuser /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Install Vosk
+# Install vosk from repository (pip version has syntax error)
 RUN git clone https://github.com/alphacep/vosk-api.git /tmp/vosk-api && \
     cd /tmp/vosk-api/python && \
     python setup.py install && \
-    rm -rf /tmp/vosk-api && \
-    apt-get purge -y git build-essential python3-dev && \
+    rm -rf /tmp/vosk-api
+
+# Clean up build dependencies
+RUN apt-get purge -y git build-essential python3-dev && \
     apt-get autoremove -y && \
     rm -rf /var/lib/apt/lists/*
+
+# Set model path to persistent config directory
+ENV VOSK_MODEL_PATH=/app/config/model
 
 # Copy backend code
 COPY --chown=appuser:appuser *.py ./
@@ -58,6 +64,15 @@ RUN echo '#!/bin/bash\n\
 # Substitute PORT env into nginx config\n\
 envsubst "\$PORT" < /etc/nginx/templates/default.conf.template > /etc/nginx/sites-available/default\n\
 ln -sf /etc/nginx/sites-available/default /etc/nginx/sites-enabled/default\n\
+\n\
+# Download default Vosk model if not exists\n\
+if [ ! -d "/app/config/model" ]; then\n\
+    echo "Downloading Vosk model..."\n\
+    curl -L https://alphacephei.com/vosk/models/vosk-model-small-en-us-0.15.zip -o /tmp/model.zip\n\
+    unzip /tmp/model.zip -d /app/config\n\
+    mv /app/config/vosk-model-small-en-us-0.15 /app/config/model\n\
+    rm /tmp/model.zip\n\
+fi\n\
 \n\
 # Start FastAPI (Localhost only for isolation)\n\
 python -m uvicorn api:app --host 127.0.0.1 --port 8000 >> /app/config/api.log 2>&1 &\n\

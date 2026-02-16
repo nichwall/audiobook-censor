@@ -235,9 +235,15 @@ class AudiobookCensor:
         startTime = time.time()
         print(f"→ Transcribing {input_path} with vosk...")
 
-        self.run_cmd([
+        cmd = [
             "vosk-transcriber", "-i", input_path, "-t", "json", "-o", output_json
-        ])
+        ]
+        
+        model_path = os.environ.get("VOSK_MODEL_PATH")
+        if model_path:
+            cmd.extend(["-m", model_path])
+            
+        self.run_cmd(cmd)
 
         self.cleanup_transcript(output_json)
 
