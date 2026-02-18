@@ -3,7 +3,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    image: audiobook-censor:latest
+    image: ghcr.io/nichwall/audiobook-censor:latest
     container_name: censor-try-1
     ports:
       - "8085:80"

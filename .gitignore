@@ -55,6 +55,7 @@ blocklist.txt
 *.mp4
 
 input/
+config/
 transcripts/
 output/
 python_venv/
