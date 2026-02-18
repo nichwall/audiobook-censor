@@ -80,24 +80,23 @@ ENV PORT=80
 RUN echo '#!/bin/bash\n\
 set -euo pipefail\n\
 \n\
-# Substitute PORT env into nginx config\n\
-envsubst "\$PORT" < /etc/nginx/templates/default.conf.template > /etc/nginx/sites-available/default\n\
-ln -sf /etc/nginx/sites-available/default /etc/nginx/sites-enabled/default\n\
+# Substitute PORT env into nginx config stored in a user-writable directory\n\
+mkdir -p /app/config\n\
+envsubst "\$PORT" < /etc/nginx/templates/default.conf.template > /app/config/nginx.conf\n\
 \n\
 # Ensure API log exists for tee\n\
-mkdir -p /app/config\n\
 touch /app/config/api.log\n\
 \n\
 # Start FastAPI (Localhost only for isolation)\n\
-python -m uvicorn api:app --host 127.0.0.1 --port 8000 2>&1 | tee /app/config/api.log &\n\
-\n\
+python -m uvicorn api:app --host 127.0.0.1 --port 8000 2>&1 | tee /app/config/api.log &\n\n\
 # Start Nginx\n\
 nginx -g "daemon off;"\n\
 ' > /app/start.sh && chmod +x /app/start.sh && chown appuser:appuser /app/start.sh
 # Adjust Nginx permissions to run as non-root
 RUN touch /var/run/nginx.pid && \
     mkdir -p /var/cache/nginx /var/log/nginx /var/lib/nginx && \
-    chown -R appuser:appuser /var/run/nginx.pid /var/cache/nginx /var/log/nginx /etc/nginx/sites-available /etc/nginx/sites-enabled /var/lib/nginx
+    chown -R appuser:appuser /var/run/nginx.pid /var/cache/nginx /var/log/nginx /etc/nginx/conf.d /etc/nginx/sites-available /etc/nginx/sites-enabled /var/lib/nginx && \
+    ln -sf /app/config/nginx.conf /etc/nginx/conf.d/default.conf
 
 USER appuser
 
