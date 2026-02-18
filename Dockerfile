@@ -12,8 +12,6 @@ FROM python:3.11-slim
 # Install system dependencies
 RUN apt-get update && apt-get install -y \
     ffmpeg \
-    nginx \
-    gettext-base \
     git \
     build-essential \
     python3-dev \
@@ -68,35 +66,24 @@ ENV VOSK_MODEL_PATH=/app/model
 
 # Copy backend code
 COPY --chown=appuser:appuser *.py ./
-COPY nginx.conf.template /etc/nginx/templates/default.conf.template
 
-# Copy frontend build to Nginx public folder
-COPY --from=build-frontend /web/dist /usr/share/nginx/html
+# Copy frontend build into the app directory
+COPY --from=build-frontend /web/dist /app/frontend
 
-# Environment variable for the frontend port (default 80)
-ENV PORT=80
+# Environment variable for the frontend port (default 8000)
+ENV PORT=8000
 
-# Wrapper script to start both services
+# Wrapper script to start the API server
 RUN echo '#!/bin/bash\n\
 set -euo pipefail\n\
 \n\
-# Substitute PORT env into nginx config stored in a user-writable directory\n\
+# Ensure API log exists so we can tail it later\n\
 mkdir -p /app/config\n\
-envsubst "\$PORT" < /etc/nginx/templates/default.conf.template > /app/config/nginx.conf\n\
-\n\
-# Ensure API log exists for tee\n\
 touch /app/config/api.log\n\
 \n\
-# Start FastAPI (Localhost only for isolation)\n\
-python -m uvicorn api:app --host 127.0.0.1 --port 8000 2>&1 | tee /app/config/api.log &\n\n\
-# Start Nginx\n\
-nginx -g "daemon off;"\n\
+# Run uvicorn and log output\n\
+python -m uvicorn api:app --host 0.0.0.0 --port $PORT 2>&1 | tee /app/config/api.log\n\
 ' > /app/start.sh && chmod +x /app/start.sh && chown appuser:appuser /app/start.sh
-# Adjust Nginx permissions to run as non-root
-RUN touch /var/run/nginx.pid && \
-    mkdir -p /var/cache/nginx /var/log/nginx /var/lib/nginx && \
-    chown -R appuser:appuser /var/run/nginx.pid /var/cache/nginx /var/log/nginx /etc/nginx/conf.d /etc/nginx/sites-available /etc/nginx/sites-enabled /var/lib/nginx && \
-    ln -sf /app/config/nginx.conf /etc/nginx/conf.d/default.conf
 
 USER appuser
 

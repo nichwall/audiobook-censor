@@ -1,8 +1,6 @@
 from fastapi import FastAPI, HTTPException, Body
 from pathlib import Path
-from fastapi import Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
 import os
@@ -34,23 +32,6 @@ async def add_security_headers(request, call_next):
     return response
 
 FRONTEND_DIR = Path("/app/frontend")
-
-if FRONTEND_DIR.exists():
-    # Serve static assets (JS, CSS, images)
-    app.mount(
-        "/static",
-        StaticFiles(directory=FRONTEND_DIR / "static"),
-        name="static",
-    )
-
-    # SPA fallback: serve index.html for all non-API routes
-    @app.get("/{full_path:path}")
-    async def serve_spa(full_path: str, request: Request):
-        # Let API routes 404 normally
-        if full_path.startswith("api"):
-            raise HTTPException(status_code=404, detail="Not Found")
-
-        return FileResponse(FRONTEND_DIR / "index.html")
 
 # Constants
 INPUT_DIR = "input"
@@ -449,3 +430,22 @@ def read_list_file(path):
 def write_list_file(path, content):
     with open(path, "w", encoding="utf-8") as f:
         f.write(content)
+
+
+if FRONTEND_DIR.exists():
+    @app.get("/{full_path:path}")
+    async def serve_spa(full_path: str):
+        if full_path.startswith("api"):
+            raise HTTPException(status_code=404, detail="Not Found")
+
+        candidate = FRONTEND_DIR / full_path
+        if full_path:
+            requested_path = Path(full_path)
+            if (
+                ".." not in requested_path.parts
+                and candidate.exists()
+                and candidate.is_file()
+            ):
+                return FileResponse(candidate)
+
+        return FileResponse(FRONTEND_DIR / "index.html")
