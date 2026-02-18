@@ -1,0 +1,16 @@
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: audiobook-censor:latest
+    container_name: censor-try-1
+    ports:
+      - "8085:80"
+    restart: unless-stopped
+    volumes:
+      - ./input:/app/input
+      - ./output:/app/output
+      - ./transcripts:/app/transcripts
+      - ./config:/app/config
+    user: "1000:1000"

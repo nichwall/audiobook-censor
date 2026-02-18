@@ -39,3 +39,25 @@
 
 # debug information files
 *.dwo
+
+# Whisper CPP
+whisper.cpp/
+
+# Binary files
+*.opus
+allowlist.txt
+blocklist.txt
+*.wav
+*.flac
+*.m4a
+*.m4b
+*.mp3
+*.mp4
+
+input/
+transcripts/
+output/
+python_venv/
+*.json
+*.pyc
+*.log
