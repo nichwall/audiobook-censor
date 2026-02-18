@@ -235,9 +235,33 @@ class AudiobookCensor:
         startTime = time.time()
         print(f"→ Transcribing {input_path} with vosk...")
 
-        self.run_cmd([
-            "vosk-transcriber", "-i", input_path, "-t", "json", "-o", output_json
-        ])
+        # BUG WORKAROUND: vosk-transcriber has a bug where it fails if the input path
+        # contains single quotes, because it improperly uses shlex.split on a string
+        # it already wrapped in single quotes.
+        # We work around this by creating a temporary symlink with a "safe" name.
+        actual_input_path = input_path
+        temp_symlink = None
+        if "'" in input_path:
+            temp_ext = os.path.splitext(input_path)[1]
+            temp_symlink = os.path.join(os.path.dirname(input_path), f"tmp_transcribe_{hash(input_path)}{temp_ext}")
+            if os.path.exists(temp_symlink):
+                os.remove(temp_symlink)
+            os.symlink(os.path.abspath(input_path), temp_symlink)
+            actual_input_path = temp_symlink
+
+        try:
+            cmd = [
+                "vosk-transcriber", "-i", actual_input_path, "-t", "json", "-o", output_json
+            ]
+            
+            model_path = os.environ.get("VOSK_MODEL_PATH")
+            if model_path:
+                cmd.extend(["-m", model_path])
+                
+            self.run_cmd(cmd)
+        finally:
+            if temp_symlink and os.path.exists(temp_symlink):
+                os.remove(temp_symlink)
 
         self.cleanup_transcript(output_json)
 
