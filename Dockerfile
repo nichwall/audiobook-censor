@@ -39,15 +39,24 @@ RUN curl -L "${VOSK_MODEL_URL}" -o /tmp/model.zip && \
 
 RUN chown -R appuser:appuser /app
 
-# Install Python dependencies
+# Install Python dependencies (including vosk via pip)
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Install vosk from repository (pip version has syntax error)
-RUN git clone https://github.com/alphacep/vosk-api.git /tmp/vosk-api && \
-    cd /tmp/vosk-api/python && \
-    python setup.py install && \
-    rm -rf /tmp/vosk-api
+# Patch the installed vosk transcriber so overlapping sentence accumulation works correctly.
+RUN python - <<'PY'
+from pathlib import Path
+
+path = Path('/usr/local/lib/python3.11/site-packages/vosk/transcriber/transcriber.py')
+text = path.read_text()
+needle = 'monologue["text"] += part["text"]'
+replace = 'monologues["text"] += part["text"]'
+
+if needle not in text:
+    raise SystemExit('expected pattern not found')
+
+path.write_text(text.replace(needle, replace, 1))
+PY
 
 # Clean up build dependencies
 RUN apt-get purge -y git build-essential python3-dev && \
