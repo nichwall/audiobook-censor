@@ -29,6 +29,14 @@ RUN mkdir -p \
       /app/output \
       /app/transcripts \
       /app/config
+
+# Download the Vosk small US English model into the image so we can use it at runtime.
+ARG VOSK_MODEL_URL=https://alphacephei.com/vosk/models/vosk-model-small-en-us-0.15.zip
+RUN curl -L "${VOSK_MODEL_URL}" -o /tmp/model.zip && \
+    unzip /tmp/model.zip -d /tmp && \
+    mv /tmp/vosk-model-small-en-us-0.15 /app/model && \
+    rm -rf /tmp/model.zip
+
 RUN chown -R appuser:appuser /app
 
 # Install Python dependencies
@@ -46,8 +54,8 @@ RUN apt-get purge -y git build-essential python3-dev && \
     apt-get autoremove -y && \
     rm -rf /var/lib/apt/lists/*
 
-# Set model path to persistent config directory
-ENV VOSK_MODEL_PATH=/app/config/model
+# Set model path to the baked-in model
+ENV VOSK_MODEL_PATH=/app/model
 
 # Copy backend code
 COPY --chown=appuser:appuser *.py ./
@@ -61,26 +69,22 @@ ENV PORT=80
 
 # Wrapper script to start both services
 RUN echo '#!/bin/bash\n\
+set -euo pipefail\n\
+\n\
 # Substitute PORT env into nginx config\n\
 envsubst "\$PORT" < /etc/nginx/templates/default.conf.template > /etc/nginx/sites-available/default\n\
 ln -sf /etc/nginx/sites-available/default /etc/nginx/sites-enabled/default\n\
 \n\
-# Download default Vosk model if not exists\n\
-if [ ! -d "/app/config/model" ]; then\n\
-    echo "Downloading Vosk model..."\n\
-    curl -L https://alphacephei.com/vosk/models/vosk-model-small-en-us-0.15.zip -o /tmp/model.zip\n\
-    unzip /tmp/model.zip -d /app/config\n\
-    mv /app/config/vosk-model-small-en-us-0.15 /app/config/model\n\
-    rm /tmp/model.zip\n\
-fi\n\
+# Ensure API log exists for tee\n\
+mkdir -p /app/config\n\
+touch /app/config/api.log\n\
 \n\
 # Start FastAPI (Localhost only for isolation)\n\
-python -m uvicorn api:app --host 127.0.0.1 --port 8000 >> /app/config/api.log 2>&1 &\n\
+python -m uvicorn api:app --host 127.0.0.1 --port 8000 2>&1 | tee /app/config/api.log &\n\
 \n\
 # Start Nginx\n\
 nginx -g "daemon off;"\n\
 ' > /app/start.sh && chmod +x /app/start.sh && chown appuser:appuser /app/start.sh
-
 # Adjust Nginx permissions to run as non-root
 RUN touch /var/run/nginx.pid && \
     mkdir -p /var/cache/nginx /var/log/nginx /var/lib/nginx && \
