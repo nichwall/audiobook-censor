@@ -7,3 +7,11 @@ This started out as a request from friends who wanted a vid-angel-like experienc
 This process is *not* 100% accurate and will not catch all words, but catches a lot of things.
 
 FYI, the frontend was entirely written by AI, so use at your own risk. The original backend was also modified as a result of this to make it function better with the frontend.
+
+## General usage
+
+Put audio files into the `input/` folder. Once an audio file is transcribed, the transcription will stick around because the input audio file will not change. If you change the input file and keep it with the same name, you need to manually clear out the transcription logs in `transcripts/`. Masked (censored) files are written to `output/`.
+
+Every time the allowlist or blocklist is updated, or any individual words are overridden, the "censored" status is cleared to indicate it needs to be ran again for the audio file.
+
+This tool keeps track of the runtime of the most recent transcription and censor runs to better calculate "estimated time to perform this task". For example, my desktop transcribes at about 16x speed and masks the output file at about 40x speed, but this would be different for other hardware.
