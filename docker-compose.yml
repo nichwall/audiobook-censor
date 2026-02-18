@@ -13,3 +13,4 @@ services:
       - ./output:/app/output
       - ./transcripts:/app/transcripts
       - ./config:/app/config
+    user: "1000:1000"
