@@ -1,6 +1,6 @@
 import React from 'react';
 
-function Sidebar({ files, selectedFile, onSelectFile, jobStatus, onRefreshMetadata, isRefreshingMetadata }) {
+function Sidebar({ files, selectedFile, onSelectFile, jobStatus, onRefreshMetadata, isRefreshingMetadata, searchTerm, onSearchChange }) {
   const getJobForFile = (fileId) => {
     if (jobStatus.current && jobStatus.current.file_id === fileId) {
       return { ...jobStatus.current, isRunning: true };
@@ -20,6 +20,14 @@ function Sidebar({ files, selectedFile, onSelectFile, jobStatus, onRefreshMetada
         >
           {isRefreshingMetadata ? 'Refreshing…' : 'Refresh'}
         </button>
+      </div>
+      <div className="sidebar-search">
+        <input
+          type="search"
+          placeholder="Search files…"
+          value={searchTerm || ''}
+          onChange={(event) => onSearchChange(event.target.value)}
+        />
       </div>
       <div className="file-list">
         {files.map(file => {

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import Sidebar from './components/Sidebar';
 import SummaryTab from './components/SummaryTab';
 import ListsTab from './components/ListsTab';
@@ -14,6 +14,7 @@ function App() {
   const [refreshTrigger, setRefreshTrigger] = useState(0);
   const [jobStatus, setJobStatus] = useState({ current: null });
   const [isRefreshingMetadata, setIsRefreshingMetadata] = useState(false);
+  const [searchTerm, setSearchTerm] = useState('');
 
   const handleWebSocketUpdates = useCallback((updates) => {
     setFiles(prev => {
@@ -105,6 +106,18 @@ function App() {
       .catch(err => console.error(err));
   }, [refreshTrigger]);
 
+  const handleSearchChange = useCallback((value) => {
+    setSearchTerm(value);
+  }, []);
+
+  const filteredFiles = useMemo(() => {
+    if (!searchTerm) {
+      return files;
+    }
+    const query = searchTerm.toLowerCase();
+    return files.filter(file => file.filename.toLowerCase().includes(query));
+  }, [files, searchTerm]);
+
   // Handle browser back/forward buttons
   useEffect(() => {
       const handlePopState = () => {
@@ -156,12 +169,14 @@ function App() {
   return (
     <div className={`app-container ${selectedFile ? 'has-selection' : ''}`}>
       <Sidebar 
-        files={files} 
+        files={filteredFiles} 
         selectedFile={selectedFile} 
         onSelectFile={handleSelectFile}
         jobStatus={jobStatus}
         onRefreshMetadata={handleMetadataRefresh}
         isRefreshingMetadata={isRefreshingMetadata}
+        searchTerm={searchTerm}
+        onSearchChange={handleSearchChange}
       />
       
       <div className="main-content">
