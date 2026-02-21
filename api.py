@@ -103,6 +103,52 @@ def discover_audio_files():
         files.extend(glob.glob(pattern, recursive=True))
     return files
 
+def get_base_no_ext(filename: str) -> str:
+    if "." in filename:
+        return filename.rsplit(".", 1)[0]
+    return filename
+
+def is_entry_out_of_date(entry: dict, filename: str, current_block_hash: str, current_allow_hash: str) -> bool:
+    if not entry.get("censored"):
+        return False
+
+    base = get_base_no_ext(filename)
+    overrides_path = os.path.join(TRANSCRIPT_DIR, base + "_overrides.json")
+    current_overrides_hash = get_file_hash(overrides_path)
+
+    if not entry.get("blocklist_hash") or entry["blocklist_hash"] != current_block_hash:
+        return True
+    if not entry.get("allowlist_hash") or entry["allowlist_hash"] != current_allow_hash:
+        return True
+    if not entry.get("overrides_hash") or entry["overrides_hash"] != current_overrides_hash:
+        return True
+
+    return False
+
+def recompute_out_of_date_flags(mapping: dict, current_block_hash: str, current_allow_hash: str) -> bool:
+    metadata = mapping.setdefault("metadata", {})
+    id_to_path = mapping.get("id_to_path", {})
+    updated = False
+
+    for file_id, entry in metadata.items():
+        filename = entry.get("filename") or id_to_path.get(file_id)
+        if not filename:
+            continue
+        new_state = is_entry_out_of_date(entry, filename, current_block_hash, current_allow_hash)
+        if entry.get("is_out_of_date") != new_state:
+            entry["is_out_of_date"] = new_state
+            updated = True
+
+    return updated
+
+
+def refresh_out_of_date_cache():
+    current_block_hash = get_file_hash(GLOBAL_BLOCKLIST)
+    current_allow_hash = get_file_hash(GLOBAL_ALLOWLIST)
+    mapping = load_mapping()
+    if recompute_out_of_date_flags(mapping, current_block_hash, current_allow_hash):
+        save_mapping(mapping)
+
 @app.get("/api/files", response_model=List[FileStatus])
 def list_files():
     mapping = load_mapping()
@@ -155,7 +201,6 @@ def refresh_file_metadata():
 
         is_transcribed = os.path.exists(transcript_path)
         is_censored = os.path.exists(output_path)
-        overrides_hash = get_file_hash(overrides_path)
 
         try:
             duration = int(censor_app.get_audio_duration(fpath))
@@ -170,20 +215,7 @@ def refresh_file_metadata():
             "censored": is_censored
         })
 
-        stored_block = entry.get("blocklist_hash", "")
-        stored_allow = entry.get("allowlist_hash", "")
-        stored_overrides = entry.get("overrides_hash", "")
-
-        if is_censored:
-            is_out_of_date = (
-                not stored_block or stored_block != current_block_hash or
-                not stored_allow or stored_allow != current_allow_hash or
-                not stored_overrides or stored_overrides != overrides_hash
-            )
-        else:
-            is_out_of_date = False
-
-        entry["is_out_of_date"] = is_out_of_date
+        entry["is_out_of_date"] = entry.get("is_out_of_date", False)
 
         new_metadata[file_id] = entry
         new_path_to_id[rel_path] = file_id
@@ -192,6 +224,7 @@ def refresh_file_metadata():
     mapping["path_to_id"] = new_path_to_id
     mapping["id_to_path"] = new_id_to_path
     mapping["metadata"] = new_metadata
+    recompute_out_of_date_flags(mapping, current_block_hash, current_allow_hash)
     save_mapping(mapping)
 
     return {"status": "success", "files": len(new_metadata)}
@@ -394,6 +427,7 @@ def update_overrides_bulk(id: str, data: dict):
         overrides[str(item["start_time"])] = item["allow"]
     with open(overrides_path, "w") as f:
         json.dump(overrides, f)
+    refresh_out_of_date_cache()
     return {"status": "success"}
 
 @app.get("/api/config/global")
@@ -409,6 +443,7 @@ def update_global_config(config: dict = Body(...)):
         write_list_file(GLOBAL_BLOCKLIST, config["blocklist"])
     if "allowlist" in config:
         write_list_file(GLOBAL_ALLOWLIST, config["allowlist"])
+    refresh_out_of_date_cache()
     return {"status": "success"}
 
 @app.post("/api/files/{id}/overrides")
@@ -425,6 +460,7 @@ def update_overrides(id: str, override: OverrideUpdate):
     overrides[str(override.start_time)] = override.allow
     with open(overrides_path, "w") as f:
         json.dump(overrides, f, indent=2)
+    refresh_out_of_date_cache()
     return {"status": "success"}
 
 def read_list_file(path):
