@@ -18,7 +18,7 @@ function Sidebar({ files, selectedFile, onSelectFile, jobStatus, onRefreshMetada
           onClick={onRefreshMetadata}
           disabled={isRefreshingMetadata}
         >
-          {isRefreshingMetadata ? 'Refreshing…' : 'Rescan'}
+          {isRefreshingMetadata ? 'Refreshing…' : 'Refresh'}
         </button>
       </div>
       <div className="file-list">

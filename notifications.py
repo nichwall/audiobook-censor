@@ -25,7 +25,7 @@ def setup_notifier(loop: asyncio.AbstractEventLoop) -> None:
         pending_updates.clear()
 
 
-def set_factor_getter(fn: Callable[[str], float]) -> None:
+def set_factor_getter(fn: Callable[[str, Optional[str]], float]) -> None:
     global factor_getter
     factor_getter = fn
 
@@ -115,9 +115,18 @@ def emit_job_update(
     emit_batch(updates)
 
 
-async def websocket_handler(ws: WebSocket) -> None:
+async def websocket_handler(
+    ws: WebSocket,
+    initial_updates: Optional[List[Dict[str, Any]]] = None
+) -> None:
     await ws.accept()
     connected_clients.add(ws)
+    if initial_updates:
+        try:
+            await ws.send_json(initial_updates)
+        except Exception:
+            connected_clients.discard(ws)
+            return
     try:
         while True:
             await ws.receive_text()

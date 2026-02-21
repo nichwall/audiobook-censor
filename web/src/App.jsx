@@ -82,13 +82,6 @@ function App() {
     };
   }, [handleWebSocketUpdates]);
 
-  useEffect(() => {
-    fetch(`${API_BASE}/jobs/status`)
-      .then(res => res.json())
-      .then(setJobStatus)
-      .catch(err => console.error("Failed to load job status:", err));
-  }, []);
-
   // Fetch files whenever refreshTrigger changes
   useEffect(() => {
     fetch(`${API_BASE}/files`)

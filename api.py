@@ -10,7 +10,7 @@ import asyncio
 from typing import List, Optional
 
 from censor import AudiobookCensor
-from jobs import JobManager
+import jobs
 from file_mapping import ensure_file_id, load_mapping, save_mapping
 import notifications
 
@@ -41,6 +41,8 @@ OUTPUT_DIR = "output"
 TRANSCRIPT_DIR = "transcripts"
 CONFIG_DIR = "config"
 
+STATS_FILE = os.path.abspath(os.path.join(CONFIG_DIR, "..", "stats.json"))
+
 AUDIO_EXTENSIONS = ["*.mp3", "*.opus", "*.flac", "*.wav", "*.m4a"]
 
 # Ensure directories exist
@@ -49,16 +51,22 @@ for d in [INPUT_DIR, OUTPUT_DIR, TRANSCRIPT_DIR, CONFIG_DIR]:
 
 GLOBAL_BLOCKLIST = os.path.join(CONFIG_DIR, "blocklist.txt")
 GLOBAL_ALLOWLIST = os.path.join(CONFIG_DIR, "allowlist.txt")
-JOBS_FILE = os.path.join(CONFIG_DIR, "jobs.json")
 
+stats_path = STATS_FILE
 censor_app = AudiobookCensor(INPUT_DIR, OUTPUT_DIR, TRANSCRIPT_DIR)
-job_manager = JobManager(JOBS_FILE, censor_app, TRANSCRIPT_DIR, GLOBAL_BLOCKLIST, GLOBAL_ALLOWLIST)
+jobs.init_job_worker(
+    censor_app,
+    TRANSCRIPT_DIR,
+    GLOBAL_BLOCKLIST,
+    GLOBAL_ALLOWLIST,
+    stats_file=stats_path
+)
 
 
 @app.on_event("startup")
 async def initialize_notifications():
     notifications.setup_notifier(asyncio.get_running_loop())
-    notifications.set_factor_getter(job_manager.get_factor)
+    notifications.set_factor_getter(jobs.get_factor)
 
 def get_file_path(file_id: str, mapping: dict):
     # Strict ID validation (UUID-ish)
@@ -183,8 +191,8 @@ def list_files():
             transcribed=bool(entry.get("transcribed")),
             censored=bool(entry.get("censored")),
             is_out_of_date=bool(entry.get("is_out_of_date")),
-            est_transcribe_duration=int(duration * job_manager.get_factor("transcribe", extension)),
-            est_censor_duration=int(duration * job_manager.get_factor("censor", extension))
+            est_transcribe_duration=int(duration * jobs.get_factor("transcribe", extension)),
+            est_censor_duration=int(duration * jobs.get_factor("censor", extension))
         ))
 
     files.sort(key=lambda x: x.filename)
@@ -228,6 +236,7 @@ def refresh_file_metadata():
             "transcribed": is_transcribed,
             "censored": is_censored
         })
+        entry["extension"] = os.path.splitext(rel_path)[1].lower()
 
         new_metadata[file_id] = entry
         new_path_to_id[rel_path] = file_id
@@ -254,7 +263,7 @@ def transcribe_file(id: str):
     except:
         duration = None
         
-    success = job_manager.enqueue(id, filename, "transcribe", input_path=fpath, base_no_ext=base_no_ext, duration=int(duration or 0))
+    success = jobs.enqueue_job(id, filename, "transcribe", input_path=fpath, base_no_ext=base_no_ext, duration=int(duration or 0))
     if not success:
         raise HTTPException(status_code=429, detail="Server is currently busy with another task")
     return {"status": "success", "message": "Transcription started"}
@@ -272,7 +281,7 @@ def run_full_workflow(id: str):
     except:
         duration = None
         
-    success = job_manager.enqueue(id, filename, "full_workflow", input_path=fpath, output_path=output_file, base_no_ext=base_no_ext, duration=int(duration or 0))
+    success = jobs.enqueue_job(id, filename, "full_workflow", input_path=fpath, output_path=output_file, base_no_ext=base_no_ext, duration=int(duration or 0))
     if not success:
         raise HTTPException(status_code=429, detail="Server is currently busy with another task")
     return {"status": "success", "message": "Full workflow started"}
@@ -403,14 +412,14 @@ def censor_file(id: str):
     except:
         duration = None
 
-    success = job_manager.enqueue(id, filename, "censor", input_path=fpath, output_path=output_file, base_no_ext=base_no_ext, duration=int(duration or 0))
+    success = jobs.enqueue_job(id, filename, "censor", input_path=fpath, output_path=output_file, base_no_ext=base_no_ext, duration=int(duration or 0))
     if not success:
         raise HTTPException(status_code=429, detail="Server is currently busy with another task")
     return {"status": "success", "message": "Censoring started"}
 
 @app.get("/api/jobs/status")
 def get_jobs_status():
-    st = job_manager.get_status().copy()
+    st = jobs.get_status().copy()
     if st.get("current"):
         # Strip internal fields for the frontend
         public_fields = ["file_id", "filename", "type", "duration", "started_at"]
@@ -419,7 +428,9 @@ def get_jobs_status():
         # Calculate estimate on the backend
         duration = clean_job.get("duration", 0)
         started_at = clean_job.get("started_at", 0)
-        factor = job_manager.get_factor(clean_job["type"])
+        filename = clean_job.get("filename", "")
+        _, extension = os.path.splitext(filename)
+        factor = jobs.get_factor(clean_job["type"], extension)
         clean_job["calculated_est_end_at"] = started_at + (duration * factor)
         
         st["current"] = clean_job
@@ -488,7 +499,17 @@ def write_list_file(path, content):
 
 @app.websocket("/ws/updates")
 async def websocket_updates(ws: WebSocket):
-    await notifications.websocket_handler(ws)
+    initial_updates = []
+    current_job = jobs.get_status().get("current")
+    if current_job:
+        mapping = load_mapping()
+        job_payload = jobs.build_job_payload(current_job, "started")
+        initial_updates = notifications.build_update_payload(
+            [current_job["file_id"]],
+            mapping=mapping,
+            job_info=job_payload
+        )
+    await notifications.websocket_handler(ws, initial_updates=initial_updates)
 
 
 if FRONTEND_DIR.exists():
