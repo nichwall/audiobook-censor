@@ -172,6 +172,10 @@ def list_files():
             continue
 
         duration = int(entry.get("duration") or 0)
+        extension = entry.get("extension")
+        if not extension:
+            _, extension = os.path.splitext(filename)
+            extension = extension.lower()
         files.append(FileStatus(
             id=file_id,
             filename=filename,
@@ -179,8 +183,8 @@ def list_files():
             transcribed=bool(entry.get("transcribed")),
             censored=bool(entry.get("censored")),
             is_out_of_date=bool(entry.get("is_out_of_date")),
-            est_transcribe_duration=int(duration * job_manager.get_factor("transcribe")),
-            est_censor_duration=int(duration * job_manager.get_factor("censor"))
+            est_transcribe_duration=int(duration * job_manager.get_factor("transcribe", extension)),
+            est_censor_duration=int(duration * job_manager.get_factor("censor", extension))
         ))
 
     files.sort(key=lambda x: x.filename)

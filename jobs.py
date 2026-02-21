@@ -20,14 +20,14 @@ class JobManager:
         
         # Default factors: audio_duration * factor = runtime
         self.default_factors = {
-            "transcribe": 0.08,
-            "censor": 0.03,
-            "full_workflow": 0.11
+            "transcribe": {"default": 0.08},
+            "censor": {"default": 0.03},
+            "full_workflow": {"default": 0.11}
         }
         self.stats = {
-            "transcribe": [],
-            "censor": [],
-            "full_workflow": []
+            "transcribe": {},
+            "censor": {},
+            "full_workflow": {}
         }
         
         self.load_status()
@@ -66,21 +66,28 @@ class JobManager:
             with open(self.stats_file, "w") as f:
                 json.dump(self.stats, f, indent=2)
 
-    def get_factor(self, job_type):
+    def get_factor(self, job_type, extension=None):
         with self.lock:
-            history = self.stats.get(job_type, [])
-            if not history:
-                return self.default_factors.get(job_type, 0.1)
-            return sum(history) / len(history)
+            history = self.stats.get(job_type, {})
+            key = (extension or "default").lower()
+            bucket = history.get(key)
+            if bucket:
+                return sum(bucket) / len(bucket)
+            bucket = history.get("default")
+            if bucket:
+                return sum(bucket) / len(bucket)
+            return self.default_factors.get(job_type, {}).get(key, self.default_factors.get(job_type, {}).get("default", 0.1))
 
-    def record_run(self, job_type, duration, runtime):
+    def record_run(self, job_type, duration, runtime, extension=None):
         if not duration or duration <= 0: return
         factor = runtime / duration
         with self.lock:
-            history = self.stats.setdefault(job_type, [])
-            history.append(factor)
-            if len(history) > 5:
-                history.pop(0)
+            history = self.stats.setdefault(job_type, {})
+            key = (extension or "default").lower()
+            bucket = history.setdefault(key, [])
+            bucket.append(factor)
+            if len(bucket) > 5:
+                bucket.pop(0)
             self.save_stats()
 
     def enqueue(self, file_id, filename, job_type, input_path=None, output_path=None, base_no_ext=None, duration=None):
@@ -88,6 +95,7 @@ class JobManager:
             if self.status["current"] or self.next_job:
                 return False # Busy
             
+            extension = os.path.splitext(filename)[1].lower()
             job = {
                 "file_id": file_id,
                 "filename": filename,
@@ -95,7 +103,8 @@ class JobManager:
                 "input_path": input_path,
                 "output_path": output_path,
                 "base_no_ext": base_no_ext,
-                "duration": duration
+                "duration": duration,
+                "extension": extension
             }
             self.next_job = job
             return True
@@ -124,7 +133,7 @@ class JobManager:
                     duration = job.get("duration")
                     if duration:
                         runtime = time.time() - start_time
-                        self.record_run(job["type"], duration, runtime)
+                        self.record_run(job["type"], duration, runtime, job.get("extension"))
                 except Exception as e:
                     print(f"Job failed: {e}")
                     time.sleep(5)
@@ -157,12 +166,14 @@ class JobManager:
         if job_type == "transcribe":
             self.censor_app.transcribe(job["input_path"], job["base_no_ext"])
             update_file_metadata(job["file_id"], {"transcribed": True})
+            notifications.emit_metadata_updates([job["file_id"]])
         elif job_type == "censor":
             self._do_censor(job)
         elif job_type == "full_workflow":
             # 1. Transcribe
             self.censor_app.transcribe(job["input_path"], job["base_no_ext"])
             update_file_metadata(job["file_id"], {"transcribed": True})
+            notifications.emit_metadata_updates([job["file_id"]])
             # 2. Censor
             self._do_censor(job)
 
@@ -198,3 +209,4 @@ class JobManager:
             "is_out_of_date": False
         }
         update_file_metadata(job["file_id"], meta)
+        notifications.emit_metadata_updates([job["file_id"]])

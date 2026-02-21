@@ -1,4 +1,5 @@
 import asyncio
+import os
 from typing import Any, Callable, Dict, Iterable, List, Optional, Set
 
 from fastapi import WebSocket, WebSocketDisconnect
@@ -9,7 +10,7 @@ event_loop: Optional[asyncio.AbstractEventLoop] = None
 update_queue: Optional[asyncio.Queue] = None
 connected_clients: Set[WebSocket] = set()
 pending_updates: List[List[Dict[str, Any]]] = []
-factor_getter: Callable[[str], float] = lambda job_type: 0
+factor_getter: Callable[[str, Optional[str]], float] = lambda job_type, ext=None: 0
 
 
 def setup_notifier(loop: asyncio.AbstractEventLoop) -> None:
@@ -79,6 +80,10 @@ def build_update_payload(
         if not filename:
             continue
         duration = int(entry.get("duration") or 0)
+        extension = entry.get("extension")
+        if not extension:
+            _, extension = os.path.splitext(filename)
+            extension = extension.lower()
         updates.append({
             "id": file_id,
             "filename": filename,
@@ -86,8 +91,8 @@ def build_update_payload(
             "transcribed": bool(entry.get("transcribed")),
             "censored": bool(entry.get("censored")),
             "is_out_of_date": bool(entry.get("is_out_of_date")),
-            "est_transcribe_duration": int(duration * factor_getter("transcribe")),
-            "est_censor_duration": int(duration * factor_getter("censor")),
+            "est_transcribe_duration": int(duration * factor_getter("transcribe", extension)),
+            "est_censor_duration": int(duration * factor_getter("censor", extension)),
             **({"job": job_info} if job_info else {})
         })
     return updates
