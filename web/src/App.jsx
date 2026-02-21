@@ -221,6 +221,7 @@ function App() {
                   apiBase={API_BASE} 
                   onUpdate={refreshData}
                   jobStatus={jobStatus}
+                  isRefreshingMetadata={isRefreshingMetadata}
                 />
               )}
               {activeTab === 'lists' && (

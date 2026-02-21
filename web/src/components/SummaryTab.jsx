@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 
-function SummaryTab({ file, apiBase, onUpdate, jobStatus }) {
+function SummaryTab({ file, apiBase, onUpdate, jobStatus, isRefreshingMetadata }) {
   const [loading, setLoading] = useState(false);
 
   const currentJob = jobStatus.current && jobStatus.current.file_id === file.id ? jobStatus.current : null;
@@ -114,18 +114,31 @@ function SummaryTab({ file, apiBase, onUpdate, jobStatus }) {
 
       {/* Global Job Status Indicator */}
       {jobStatus.current && (
-          <div className="card" style={{marginBottom: 20, display: 'flex', alignItems: 'center', gap: 12, borderLeft: '4px solid var(--accent-primary)'}}>
-              <div className="spinner"></div>
-              <div style={{flex: 1}}>
-                  <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center'}}>
-                      <strong>Currently {jobStatus.current.type === 'transcribe' ? 'Transcribing' : (jobStatus.current.type === 'censor' ? 'Censoring' : 'Processing')}:</strong>
-                      <span style={{fontSize: '0.8rem', color: 'var(--text-secondary)'}}>{jobStatus.current.filename}</span>
-                  </div>
+        <div className="card" style={{marginBottom: 20, display: 'flex', alignItems: 'center', gap: 12, borderLeft: '4px solid var(--accent-primary)'}}>
+            <div className="spinner"></div>
+            <div style={{flex: 1}}>
+                <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center'}}>
+                    <strong>Currently {jobStatus.current.type === 'transcribe' ? 'Transcribing' : (jobStatus.current.type === 'censor' ? 'Censoring' : 'Processing')}:</strong>
+                    <span style={{fontSize: '0.8rem', color: 'var(--text-secondary)'}}>{jobStatus.current.filename}</span>
+                </div>
                   <div style={{display: 'flex', gap: 16, marginTop: 8, fontSize: '0.85rem'}}>
                       <div><span style={{color: 'var(--text-secondary)'}}>Started:</span> {formatTimeMinutesOnly(jobStatus.current.started_at, 'down')}</div>
                       {jobStatus.current.duration && (
                           <div><span style={{color: 'var(--text-secondary)'}}>Est. End:</span> {formatTimeMinutesOnly(getEstimatedEndTime(jobStatus.current), 'up')}</div>
                       )}
+                  </div>
+            </div>
+        </div>
+      )}
+      {isRefreshingMetadata && !jobStatus.current && (
+          <div className="card" style={{marginBottom: 20, display: 'flex', alignItems: 'center', gap: 12, borderLeft: '4px solid var(--warning)'}}>
+              <div className="spinner"></div>
+              <div style={{flex: 1}}>
+                  <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center'}}>
+                      <strong>Scanning file system</strong>
+                  </div>
+                  <div style={{marginTop: 8, fontSize: '0.85rem', color: 'var(--text-secondary)'}}>
+                      Other long-running operations are blocked until refresh completes.
                   </div>
               </div>
           </div>
