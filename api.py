@@ -41,7 +41,7 @@ OUTPUT_DIR = "output"
 TRANSCRIPT_DIR = "transcripts"
 CONFIG_DIR = "config"
 
-STATS_FILE = os.path.abspath(os.path.join(CONFIG_DIR, "..", "stats.json"))
+STATS_FILE = os.path.abspath(os.path.join(CONFIG_DIR, "stats.json"))
 
 AUDIO_EXTENSIONS = ["*.mp3", "*.opus", "*.flac", "*.wav", "*.m4a"]
 
