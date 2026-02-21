@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import Sidebar from './components/Sidebar';
 import SummaryTab from './components/SummaryTab';
 import ListsTab from './components/ListsTab';
@@ -15,30 +15,72 @@ function App() {
   const [jobStatus, setJobStatus] = useState({ current: null });
   const [isRefreshingMetadata, setIsRefreshingMetadata] = useState(false);
 
-  const pollingTimeoutRef = useRef(null);
-  const prevJobRef = useRef(null);
+  const handleWebSocketUpdates = useCallback((updates) => {
+    setFiles(prev => {
+      const map = new Map(prev.map(file => [file.id, file]));
+      updates.forEach(update => {
+        const existing = map.get(update.id) || {};
+        map.set(update.id, { ...existing, ...update });
+      });
+      const arr = Array.from(map.values());
+      arr.sort((a, b) => a.filename.localeCompare(b.filename));
+      return arr;
+    });
 
-  const pollJobs = useCallback(async (delay = 30000) => {
-    // Clear any existing timeout to avoid overlaps
-    if (pollingTimeoutRef.current) {
-        clearTimeout(pollingTimeoutRef.current);
-    }
+    setSelectedFile(prev => {
+      if (!prev) return null;
+      const update = updates.find(item => item.id === prev.id);
+      return update ? { ...prev, ...update } : prev;
+    });
 
-    const executePoll = async () => {
-        try {
-            const res = await fetch(`${API_BASE}/jobs/status`);
-            const data = await res.json();
-            setJobStatus(data);
-        } catch (err) {
-            console.error("Poll jobs failed:", err);
+    setJobStatus(prev => {
+      let current = prev.current;
+      updates.forEach(item => {
+        const job = item.job;
+        if (!job) return;
+        if (job.status === 'started') {
+          current = {
+            file_id: item.id,
+            filename: item.filename,
+            type: job.type,
+            duration: job.duration,
+            started_at: job.started_at,
+            calculated_est_end_at: job.calculated_est_end_at
+          };
+        } else if (job.status === 'completed' && current && current.file_id === item.id) {
+          current = null;
         }
-        
-        // Schedule next regular poll
-        pollingTimeoutRef.current = setTimeout(() => executePoll(), 30000);
+      });
+      return { current };
+    });
+  }, []);
+
+  useEffect(() => {
+    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    const wsUrl = `${protocol}//${window.location.host}/ws/updates`;
+    const ws = new WebSocket(wsUrl);
+
+    const handleMessage = (event) => {
+      try {
+        const data = JSON.parse(event.data);
+        if (Array.isArray(data)) {
+          handleWebSocketUpdates(data);
+        }
+      } catch (err) {
+        console.error("WebSocket parse error:", err);
+      }
     };
 
-    pollingTimeoutRef.current = setTimeout(executePoll, delay);
-  }, []);
+    ws.addEventListener('message', handleMessage);
+    ws.addEventListener('error', (err) => {
+      console.error("WebSocket error:", err);
+    });
+
+    return () => {
+      ws.removeEventListener('message', handleMessage);
+      ws.close();
+    };
+  }, [handleWebSocketUpdates]);
 
   // Fetch files whenever refreshTrigger changes
   useEffect(() => {
@@ -64,44 +106,6 @@ function App() {
       })
       .catch(err => console.error(err));
   }, [refreshTrigger]);
-
-  // Refresh file list and job status on mount
-  useEffect(() => {
-    // Initial status fetch
-    fetch(`${API_BASE}/jobs/status`)
-      .then(res => res.json())
-      .then(setJobStatus)
-      .catch(() => {});
-
-    // Start the 30s heartbeat
-    pollJobs(30000);
-    
-    // Cleanup on unmount
-    return () => {
-      if (pollingTimeoutRef.current) {
-        clearTimeout(pollingTimeoutRef.current);
-        pollingTimeoutRef.current = null;
-      }
-    };
-  }, [pollJobs]);
-
-  // Refresh files whenever a job starts or finishes
-  useEffect(() => {
-    const prevJob = prevJobRef.current;
-    const currentJob = jobStatus.current;
-
-    if (!prevJob && currentJob) {
-      console.log("Job started, refreshing files...");
-      setRefreshTrigger(p => p + 1);
-      pollJobs(2000);
-    } else if (prevJob && !currentJob) {
-      console.log("Job completed, refreshing files...");
-      setRefreshTrigger(p => p + 1);
-      pollJobs(2000);
-    }
-
-    prevJobRef.current = currentJob;
-  }, [jobStatus.current, pollJobs]);
 
   // Handle browser back/forward buttons
   useEffect(() => {
@@ -133,9 +137,7 @@ function App() {
 
   const refreshData = useCallback(() => {
     setRefreshTrigger(prev => prev + 1);
-    // Restart polling with a short 2-second delay to catch the new job status
-    pollJobs(2000);
-  }, [pollJobs]);
+  }, []);
 
   const handleMetadataRefresh = useCallback(async () => {
     setIsRefreshingMetadata(true);

@@ -4,6 +4,7 @@ import threading
 import time
 
 from file_mapping import update_file_metadata
+import notifications
 
 class JobManager:
     def __init__(self, jobs_file, censor_app, transcript_dir, global_blocklist, global_allowlist):
@@ -110,8 +111,11 @@ class JobManager:
                 if self.next_job:
                     job = self.next_job
                     self.next_job = None
-                    self.status["current"] = {**job, "started_at": time.time()}
+                    started_at = time.time()
+                    job = {**job, "started_at": started_at}
+                    self.status["current"] = job
                     self.save_status()
+                    notifications.emit_job_update(job["file_id"], self._build_job_payload(job, "started"))
             
             if job:
                 start_time = time.time()
@@ -121,19 +125,31 @@ class JobManager:
                     if duration:
                         runtime = time.time() - start_time
                         self.record_run(job["type"], duration, runtime)
-                        
-                    with self.lock:
-                        self.status["current"] = None
-                        self.save_status()
                 except Exception as e:
                     print(f"Job failed: {e}")
-                    # In a single-job system, we just clear and wait
                     time.sleep(5)
+                finally:
+                    notifications.emit_job_update(job["file_id"], self._build_job_payload(job, "completed"))
                     with self.lock:
                         self.status["current"] = None
                         self.save_status()
             else:
                 time.sleep(1)
+
+    def _build_job_payload(self, job, status):
+        duration = job.get("duration") or 0
+        started_at = job.get("started_at")
+        factor = self.get_factor(job["type"])
+        est_end = None
+        if started_at is not None:
+            est_end = started_at + (duration * factor)
+        return {
+            "type": job["type"],
+            "status": status,
+            "duration": duration,
+            "started_at": started_at,
+            "calculated_est_end_at": est_end
+        }
 
     def _run_job(self, job):
         job_type = job["type"]

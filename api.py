@@ -1,4 +1,4 @@
-from fastapi import FastAPI, HTTPException, Body
+from fastapi import FastAPI, HTTPException, Body, WebSocket
 from pathlib import Path
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
@@ -6,11 +6,13 @@ from pydantic import BaseModel
 import os
 import glob
 import json
+import asyncio
 from typing import List, Optional
 
 from censor import AudiobookCensor
 from jobs import JobManager
 from file_mapping import ensure_file_id, load_mapping, save_mapping
+import notifications
 
 app = FastAPI()
 
@@ -51,6 +53,12 @@ JOBS_FILE = os.path.join(CONFIG_DIR, "jobs.json")
 
 censor_app = AudiobookCensor(INPUT_DIR, OUTPUT_DIR, TRANSCRIPT_DIR)
 job_manager = JobManager(JOBS_FILE, censor_app, TRANSCRIPT_DIR, GLOBAL_BLOCKLIST, GLOBAL_ALLOWLIST)
+
+
+@app.on_event("startup")
+async def initialize_notifications():
+    notifications.setup_notifier(asyncio.get_running_loop())
+    notifications.set_factor_getter(job_manager.get_factor)
 
 def get_file_path(file_id: str, mapping: dict):
     # Strict ID validation (UUID-ish)
@@ -125,10 +133,10 @@ def is_entry_out_of_date(entry: dict, filename: str, current_block_hash: str, cu
 
     return False
 
-def recompute_out_of_date_flags(mapping: dict, current_block_hash: str, current_allow_hash: str) -> bool:
+def recompute_out_of_date_flags(mapping: dict, current_block_hash: str, current_allow_hash: str) -> List[str]:
     metadata = mapping.setdefault("metadata", {})
     id_to_path = mapping.get("id_to_path", {})
-    updated = False
+    updated_ids: List[str] = []
 
     for file_id, entry in metadata.items():
         filename = entry.get("filename") or id_to_path.get(file_id)
@@ -137,17 +145,19 @@ def recompute_out_of_date_flags(mapping: dict, current_block_hash: str, current_
         new_state = is_entry_out_of_date(entry, filename, current_block_hash, current_allow_hash)
         if entry.get("is_out_of_date") != new_state:
             entry["is_out_of_date"] = new_state
-            updated = True
+            updated_ids.append(file_id)
 
-    return updated
+    return updated_ids
 
 
 def refresh_out_of_date_cache():
     current_block_hash = get_file_hash(GLOBAL_BLOCKLIST)
     current_allow_hash = get_file_hash(GLOBAL_ALLOWLIST)
     mapping = load_mapping()
-    if recompute_out_of_date_flags(mapping, current_block_hash, current_allow_hash):
+    changed_ids = recompute_out_of_date_flags(mapping, current_block_hash, current_allow_hash)
+    if changed_ids:
         save_mapping(mapping)
+        notifications.emit_metadata_updates(changed_ids, mapping=mapping)
 
 @app.get("/api/files", response_model=List[FileStatus])
 def list_files():
@@ -215,8 +225,6 @@ def refresh_file_metadata():
             "censored": is_censored
         })
 
-        entry["is_out_of_date"] = entry.get("is_out_of_date", False)
-
         new_metadata[file_id] = entry
         new_path_to_id[rel_path] = file_id
         new_id_to_path[file_id] = rel_path
@@ -226,6 +234,7 @@ def refresh_file_metadata():
     mapping["metadata"] = new_metadata
     recompute_out_of_date_flags(mapping, current_block_hash, current_allow_hash)
     save_mapping(mapping)
+    notifications.emit_metadata_updates(new_metadata.keys(), mapping=mapping)
 
     return {"status": "success", "files": len(new_metadata)}
 
@@ -471,6 +480,11 @@ def read_list_file(path):
 def write_list_file(path, content):
     with open(path, "w", encoding="utf-8") as f:
         f.write(content)
+
+
+@app.websocket("/ws/updates")
+async def websocket_updates(ws: WebSocket):
+    await notifications.websocket_handler(ws)
 
 
 if FRONTEND_DIR.exists():
