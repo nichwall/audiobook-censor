@@ -18,6 +18,7 @@ _current_job: Optional[Dict] = None
 _next_job: Optional[Dict] = None
 _worker_started = False
 _stats_file: Optional[str] = None
+_refresh_in_progress = False
 
 _default_factors: Dict[str, Dict[str, float]] = {
     "transcribe": {"default": 0.08},
@@ -87,7 +88,7 @@ def enqueue_job(
 ) -> bool:
     global _next_job
     with _lock:
-        if _current_job or _next_job:
+        if _current_job or _next_job or _refresh_in_progress:
             return False
         extension = os.path.splitext(filename)[1].lower()
         _next_job = {
@@ -101,6 +102,26 @@ def enqueue_job(
             "extension": extension
         }
         return True
+
+
+def start_refresh() -> bool:
+    global _refresh_in_progress
+    with _lock:
+        if _current_job or _next_job or _refresh_in_progress:
+            return False
+        _refresh_in_progress = True
+        return True
+
+
+def finish_refresh() -> None:
+    global _refresh_in_progress
+    with _lock:
+        _refresh_in_progress = False
+
+
+def is_busy() -> bool:
+    with _lock:
+        return bool(_current_job or _next_job or _refresh_in_progress)
 
 
 def get_status() -> Dict[str, Optional[Dict]]:

@@ -201,55 +201,60 @@ def list_files():
 
 @app.post("/api/files/refresh_metadata")
 def refresh_file_metadata():
-    mapping = load_mapping()
-    metadata_map = mapping.get("metadata", {})
+    if not jobs.start_refresh():
+        raise HTTPException(status_code=429, detail="Server is currently busy with another task")
+    try:
+        mapping = load_mapping()
+        metadata_map = mapping.get("metadata", {})
 
-    current_block_hash = get_file_hash(GLOBAL_BLOCKLIST)
-    current_allow_hash = get_file_hash(GLOBAL_ALLOWLIST)
-    audio_files = discover_audio_files()
+        current_block_hash = get_file_hash(GLOBAL_BLOCKLIST)
+        current_allow_hash = get_file_hash(GLOBAL_ALLOWLIST)
+        audio_files = discover_audio_files()
 
-    new_path_to_id = {}
-    new_id_to_path = {}
-    new_metadata = {}
+        new_path_to_id = {}
+        new_id_to_path = {}
+        new_metadata = {}
 
-    for fpath in audio_files:
-        rel_path = os.path.relpath(fpath, INPUT_DIR)
-        file_id = ensure_file_id(mapping, rel_path)
-        base_no_ext = rel_path.rsplit(".", 1)[0]
+        for fpath in audio_files:
+            rel_path = os.path.relpath(fpath, INPUT_DIR)
+            file_id = ensure_file_id(mapping, rel_path)
+            base_no_ext = rel_path.rsplit(".", 1)[0]
 
-        transcript_path = censor_app.transcript_path(base_no_ext)
-        output_path = os.path.join(OUTPUT_DIR, base_no_ext + "_censored.opus")
-        overrides_path = os.path.join(TRANSCRIPT_DIR, base_no_ext + "_overrides.json")
+            transcript_path = censor_app.transcript_path(base_no_ext)
+            output_path = os.path.join(OUTPUT_DIR, base_no_ext + "_censored.opus")
+            overrides_path = os.path.join(TRANSCRIPT_DIR, base_no_ext + "_overrides.json")
 
-        is_transcribed = os.path.exists(transcript_path)
-        is_censored = os.path.exists(output_path)
+            is_transcribed = os.path.exists(transcript_path)
+            is_censored = os.path.exists(output_path)
 
-        try:
-            duration = int(censor_app.get_audio_duration(fpath))
-        except:
-            duration = 0
+            try:
+                duration = int(censor_app.get_audio_duration(fpath))
+            except:
+                duration = 0
 
-        entry = dict(metadata_map.get(file_id, {}))
-        entry.update({
-            "filename": rel_path,
-            "duration": duration,
-            "transcribed": is_transcribed,
-            "censored": is_censored
-        })
-        entry["extension"] = os.path.splitext(rel_path)[1].lower()
+            entry = dict(metadata_map.get(file_id, {}))
+            entry.update({
+                "filename": rel_path,
+                "duration": duration,
+                "transcribed": is_transcribed,
+                "censored": is_censored
+            })
+            entry["extension"] = os.path.splitext(rel_path)[1].lower()
 
-        new_metadata[file_id] = entry
-        new_path_to_id[rel_path] = file_id
-        new_id_to_path[file_id] = rel_path
+            new_metadata[file_id] = entry
+            new_path_to_id[rel_path] = file_id
+            new_id_to_path[file_id] = rel_path
 
-    mapping["path_to_id"] = new_path_to_id
-    mapping["id_to_path"] = new_id_to_path
-    mapping["metadata"] = new_metadata
-    recompute_out_of_date_flags(mapping, current_block_hash, current_allow_hash)
-    save_mapping(mapping)
-    notifications.emit_metadata_updates(new_metadata.keys(), mapping=mapping)
+        mapping["path_to_id"] = new_path_to_id
+        mapping["id_to_path"] = new_id_to_path
+        mapping["metadata"] = new_metadata
+        recompute_out_of_date_flags(mapping, current_block_hash, current_allow_hash)
+        save_mapping(mapping)
+        notifications.emit_metadata_updates(new_metadata.keys(), mapping=mapping)
 
-    return {"status": "success", "files": len(new_metadata)}
+        return {"status": "success", "files": len(new_metadata)}
+    finally:
+        jobs.finish_refresh()
 
 @app.post("/api/files/{id}/transcribe")
 def transcribe_file(id: str):
