@@ -22,9 +22,7 @@ function App() {
         const existing = map.get(update.id) || {};
         map.set(update.id, { ...existing, ...update });
       });
-      const arr = Array.from(map.values());
-      arr.sort((a, b) => a.filename.localeCompare(b.filename));
-      return arr;
+      return Array.from(map.values());
     });
 
     setSelectedFile(prev => {
