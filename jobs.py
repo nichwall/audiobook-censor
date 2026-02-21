@@ -2,7 +2,8 @@ import os
 import json
 import threading
 import time
-import uuid
+
+from file_mapping import update_file_metadata
 
 class JobManager:
     def __init__(self, jobs_file, censor_app, transcript_dir, global_blocklist, global_allowlist):
@@ -139,11 +140,13 @@ class JobManager:
         
         if job_type == "transcribe":
             self.censor_app.transcribe(job["input_path"], job["base_no_ext"])
+            update_file_metadata(job["file_id"], {"transcribed": True})
         elif job_type == "censor":
             self._do_censor(job)
         elif job_type == "full_workflow":
             # 1. Transcribe
             self.censor_app.transcribe(job["input_path"], job["base_no_ext"])
+            update_file_metadata(job["file_id"], {"transcribed": True})
             # 2. Censor
             self._do_censor(job)
 
@@ -173,9 +176,9 @@ class JobManager:
             "blocklist_hash": get_h(self.global_blocklist),
             "allowlist_hash": get_h(self.global_allowlist),
             "overrides_hash": get_h(overrides_path),
-            "censored_at": time.time()
+            "censored_at": time.time(),
+            "censored": True,
+            "transcribed": True,
+            "is_out_of_date": False
         }
-        meta_path = os.path.join(self.transcript_dir, job["base_no_ext"] + "_censor_meta.json")
-        with open(meta_path, "w") as f:
-            json.dump(meta, f, indent=2)
-
+        update_file_metadata(job["file_id"], meta)

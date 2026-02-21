@@ -6,11 +6,11 @@ from pydantic import BaseModel
 import os
 import glob
 import json
-import uuid
 from typing import List, Optional
 
 from censor import AudiobookCensor
 from jobs import JobManager
+from file_mapping import ensure_file_id, load_mapping, save_mapping
 
 app = FastAPI()
 
@@ -39,27 +39,18 @@ OUTPUT_DIR = "output"
 TRANSCRIPT_DIR = "transcripts"
 CONFIG_DIR = "config"
 
+AUDIO_EXTENSIONS = ["*.mp3", "*.opus", "*.flac", "*.wav", "*.m4a"]
+
 # Ensure directories exist
 for d in [INPUT_DIR, OUTPUT_DIR, TRANSCRIPT_DIR, CONFIG_DIR]:
     os.makedirs(d, exist_ok=True)
 
 GLOBAL_BLOCKLIST = os.path.join(CONFIG_DIR, "blocklist.txt")
 GLOBAL_ALLOWLIST = os.path.join(CONFIG_DIR, "allowlist.txt")
-MAPPING_FILE = os.path.join(CONFIG_DIR, "file_mapping.json")
 JOBS_FILE = os.path.join(CONFIG_DIR, "jobs.json")
 
 censor_app = AudiobookCensor(INPUT_DIR, OUTPUT_DIR, TRANSCRIPT_DIR)
 job_manager = JobManager(JOBS_FILE, censor_app, TRANSCRIPT_DIR, GLOBAL_BLOCKLIST, GLOBAL_ALLOWLIST)
-
-def load_mapping():
-    if os.path.exists(MAPPING_FILE):
-        with open(MAPPING_FILE, "r") as f:
-            return json.load(f)
-    return {"path_to_id": {}, "id_to_path": {}}
-
-def save_mapping(mapping):
-    with open(MAPPING_FILE, "w") as f:
-        json.dump(mapping, f, indent=2)
 
 def get_file_path(file_id: str, mapping: dict):
     # Strict ID validation (UUID-ish)
@@ -105,91 +96,105 @@ def get_file_hash(path):
     with open(path, "rb") as f:
         return hashlib.md5(f.read()).hexdigest()
 
-def get_censor_metadata_path(base_no_ext):
-    return os.path.join(TRANSCRIPT_DIR, base_no_ext + "_censor_meta.json")
+def discover_audio_files():
+    files = []
+    for ext in AUDIO_EXTENSIONS:
+        pattern = os.path.join(INPUT_DIR, "**", ext)
+        files.extend(glob.glob(pattern, recursive=True))
+    return files
 
 @app.get("/api/files", response_model=List[FileStatus])
 def list_files():
     mapping = load_mapping()
-    path_to_id = mapping["path_to_id"]
-    id_to_path = mapping["id_to_path"]
-    
+    metadata_map = mapping.get("metadata", {})
+    id_to_path = mapping.get("id_to_path", {})
+
     files = []
-    # Supporting mp3, opus, flac, wav, m4a
-    extensions = ["*.mp3", "*.opus", "*.flac", "*.wav", "*.m4a"]
-    audio_files = []
-    
-    # Recursive search
-    for ext in extensions:
-        pattern = os.path.join(INPUT_DIR, "**", ext)
-        audio_files.extend(glob.glob(pattern, recursive=True))
-    
-    # Get current global config hashes
-    current_block_hash = get_file_hash(GLOBAL_BLOCKLIST)
-    current_allow_hash = get_file_hash(GLOBAL_ALLOWLIST)
+    for file_id, entry in metadata_map.items():
+        filename = entry.get("filename") or id_to_path.get(file_id)
+        if not filename:
+            continue
 
-    updated = False
-    for fpath in audio_files:
-        rel_path = os.path.relpath(fpath, INPUT_DIR)
-        
-        # Ensure UUID exists
-        if rel_path not in path_to_id:
-            new_id = str(uuid.uuid4())
-            path_to_id[rel_path] = new_id
-            id_to_path[new_id] = rel_path
-            updated = True
-        
-        file_id = path_to_id[rel_path]
-        base_no_ext = rel_path.rsplit(".", 1)[0]
-        
-        # Check transcript
-        transcript_path = censor_app.transcript_path(base_no_ext)
-        is_transcribed = os.path.exists(transcript_path)
-        
-        # Check output
-        output_path = os.path.join(OUTPUT_DIR, base_no_ext + "_censored.opus")
-        is_censored = os.path.exists(output_path)
-        censored_at = os.path.getmtime(output_path) if is_censored else None
-        
-        # Check overrides hash
-        overrides_path = os.path.join(TRANSCRIPT_DIR, base_no_ext + "_overrides.json")
-        current_overrides_hash = get_file_hash(overrides_path)
-            
-        is_out_of_date = False
-        if is_censored:
-            meta_path = get_censor_metadata_path(base_no_ext)
-            if os.path.exists(meta_path):
-                with open(meta_path, "r") as f:
-                    meta = json.load(f)
-                if (meta.get("blocklist_hash") != current_block_hash or 
-                    meta.get("allowlist_hash") != current_allow_hash or
-                    meta.get("overrides_hash") != current_overrides_hash):
-                    is_out_of_date = True
-            else:
-                # No metadata means we don't know, so assume it might be old (fallback to timestamp if needed, but let's encourage a re-run)
-                is_out_of_date = True
-
-        try:
-             duration = censor_app.get_audio_duration(fpath)
-        except:
-             duration = 0
-
+        duration = int(entry.get("duration") or 0)
         files.append(FileStatus(
             id=file_id,
-            filename=rel_path,
+            filename=filename,
             duration=duration,
-            transcribed=is_transcribed,
-            censored=is_censored,
-            is_out_of_date=is_out_of_date,
+            transcribed=bool(entry.get("transcribed")),
+            censored=bool(entry.get("censored")),
+            is_out_of_date=bool(entry.get("is_out_of_date")),
             est_transcribe_duration=int(duration * job_manager.get_factor("transcribe")),
             est_censor_duration=int(duration * job_manager.get_factor("censor"))
         ))
-    
-    if updated:
-        save_mapping(mapping)
-        
+
     files.sort(key=lambda x: x.filename)
     return files
+
+
+@app.post("/api/files/refresh_metadata")
+def refresh_file_metadata():
+    mapping = load_mapping()
+    metadata_map = mapping.get("metadata", {})
+
+    current_block_hash = get_file_hash(GLOBAL_BLOCKLIST)
+    current_allow_hash = get_file_hash(GLOBAL_ALLOWLIST)
+    audio_files = discover_audio_files()
+
+    new_path_to_id = {}
+    new_id_to_path = {}
+    new_metadata = {}
+
+    for fpath in audio_files:
+        rel_path = os.path.relpath(fpath, INPUT_DIR)
+        file_id = ensure_file_id(mapping, rel_path)
+        base_no_ext = rel_path.rsplit(".", 1)[0]
+
+        transcript_path = censor_app.transcript_path(base_no_ext)
+        output_path = os.path.join(OUTPUT_DIR, base_no_ext + "_censored.opus")
+        overrides_path = os.path.join(TRANSCRIPT_DIR, base_no_ext + "_overrides.json")
+
+        is_transcribed = os.path.exists(transcript_path)
+        is_censored = os.path.exists(output_path)
+        overrides_hash = get_file_hash(overrides_path)
+
+        try:
+            duration = int(censor_app.get_audio_duration(fpath))
+        except:
+            duration = 0
+
+        entry = dict(metadata_map.get(file_id, {}))
+        entry.update({
+            "filename": rel_path,
+            "duration": duration,
+            "transcribed": is_transcribed,
+            "censored": is_censored
+        })
+
+        stored_block = entry.get("blocklist_hash", "")
+        stored_allow = entry.get("allowlist_hash", "")
+        stored_overrides = entry.get("overrides_hash", "")
+
+        if is_censored:
+            is_out_of_date = (
+                not stored_block or stored_block != current_block_hash or
+                not stored_allow or stored_allow != current_allow_hash or
+                not stored_overrides or stored_overrides != overrides_hash
+            )
+        else:
+            is_out_of_date = False
+
+        entry["is_out_of_date"] = is_out_of_date
+
+        new_metadata[file_id] = entry
+        new_path_to_id[rel_path] = file_id
+        new_id_to_path[file_id] = rel_path
+
+    mapping["path_to_id"] = new_path_to_id
+    mapping["id_to_path"] = new_id_to_path
+    mapping["metadata"] = new_metadata
+    save_mapping(mapping)
+
+    return {"status": "success", "files": len(new_metadata)}
 
 @app.post("/api/files/{id}/transcribe")
 def transcribe_file(id: str):
