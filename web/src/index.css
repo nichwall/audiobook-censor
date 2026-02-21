@@ -55,14 +55,17 @@ body {
 
 .sidebar-header {
   padding: 20px;
+  border-bottom: 1px solid var(--border-color);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.sidebar-title {
   font-size: 1.25rem;
   font-weight: 700;
-  border-bottom: 1px solid var(--border-color);
-  background: linear-gradient(
-    135deg,
-    var(--accent-primary),
-    var(--accent-secondary)
-  );
+  background: linear-gradient(135deg, var(--accent-primary), var(--accent-secondary));
   -webkit-background-clip: text;
   background-clip: text;
   -webkit-text-fill-color: transparent;
@@ -71,6 +74,21 @@ body {
 .file-list {
   flex: 1;
   overflow-y: auto;
+}
+
+.sidebar-refresh {
+  padding: 6px 12px;
+  font-size: 0.75rem;
+  border-radius: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  font-weight: 600;
+  cursor: pointer;
+  transition: opacity 0.2s;
+}
+
+.sidebar-refresh:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
 }
 
 .file-item {

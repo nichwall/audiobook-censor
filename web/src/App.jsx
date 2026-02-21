@@ -13,6 +13,7 @@ function App() {
   const [activeTab, setActiveTab] = useState('summary');
   const [refreshTrigger, setRefreshTrigger] = useState(0);
   const [jobStatus, setJobStatus] = useState({ current: null });
+  const [isRefreshingMetadata, setIsRefreshingMetadata] = useState(false);
   
   const pollingTimeoutRef = useRef(null);
   const prevJobRef = useRef(null);
@@ -132,6 +133,19 @@ function App() {
     pollJobs(2000);
   };
 
+  const handleMetadataRefresh = useCallback(async () => {
+    setIsRefreshingMetadata(true);
+    try {
+      await fetch(`${API_BASE}/files/refresh_metadata`, { method: 'POST' });
+      setRefreshTrigger(prev => prev + 1);
+      pollJobs(2000);
+    } catch (err) {
+      console.error("Metadata refresh failed:", err);
+    } finally {
+      setIsRefreshingMetadata(false);
+    }
+  }, [pollJobs]);
+
   return (
     <div className={`app-container ${selectedFile ? 'has-selection' : ''}`}>
       <Sidebar 
@@ -139,6 +153,8 @@ function App() {
         selectedFile={selectedFile} 
         onSelectFile={handleSelectFile}
         jobStatus={jobStatus}
+        onRefreshMetadata={handleMetadataRefresh}
+        isRefreshingMetadata={isRefreshingMetadata}
       />
       
       <div className="main-content">

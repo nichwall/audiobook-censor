@@ -1,6 +1,6 @@
 import React from 'react';
 
-function Sidebar({ files, selectedFile, onSelectFile, jobStatus }) {
+function Sidebar({ files, selectedFile, onSelectFile, jobStatus, onRefreshMetadata, isRefreshingMetadata }) {
   const getJobForFile = (fileId) => {
     if (jobStatus.current && jobStatus.current.file_id === fileId) {
       return { ...jobStatus.current, isRunning: true };
@@ -10,7 +10,17 @@ function Sidebar({ files, selectedFile, onSelectFile, jobStatus }) {
 
   return (
     <div className="sidebar">
-      <div className="sidebar-header">Audio Censor</div>
+      <div className="sidebar-header">
+        <span className="sidebar-title">Audio Censor</span>
+        <button
+          type="button"
+          className="btn btn-secondary sidebar-refresh"
+          onClick={onRefreshMetadata}
+          disabled={isRefreshingMetadata}
+        >
+          {isRefreshingMetadata ? 'Refreshing…' : 'Rescan'}
+        </button>
+      </div>
       <div className="file-list">
         {files.map(file => {
           const job = getJobForFile(file.id);
