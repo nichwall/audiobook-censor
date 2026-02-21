@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 
-function ListsTab({ apiBase, onUpdate }) {
+function ListsTab({ apiBase, onUpdate, onGlobalConfigChange }) {
   const [blocklist, setBlocklist] = useState("");
   const [allowlist, setAllowlist] = useState("");
   const [status, setStatus] = useState("");
@@ -23,7 +23,8 @@ function ListsTab({ apiBase, onUpdate }) {
         body: JSON.stringify({ blocklist, allowlist })
       });
       setStatus("Saved!");
-      if (onUpdate) onUpdate();
+      if (onGlobalConfigChange) onGlobalConfigChange();
+      else if (onUpdate) onUpdate();
       setTimeout(() => setStatus(""), 2000);
     } catch (e) {
       setStatus("Error saving");

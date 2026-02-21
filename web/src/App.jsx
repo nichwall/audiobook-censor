@@ -14,7 +14,7 @@ function App() {
   const [refreshTrigger, setRefreshTrigger] = useState(0);
   const [jobStatus, setJobStatus] = useState({ current: null });
   const [isRefreshingMetadata, setIsRefreshingMetadata] = useState(false);
-  
+
   const pollingTimeoutRef = useRef(null);
   const prevJobRef = useRef(null);
 
@@ -85,19 +85,23 @@ function App() {
     };
   }, [pollJobs]);
 
-  // Trigger file refresh when a job completes
+  // Refresh files whenever a job starts or finishes
   useEffect(() => {
     const prevJob = prevJobRef.current;
     const currentJob = jobStatus.current;
-    
-    // Check for transition from "busy" (having a job) to "idle" (no job)
-    if (prevJob && !currentJob) {
+
+    if (!prevJob && currentJob) {
+      console.log("Job started, refreshing files...");
+      setRefreshTrigger(p => p + 1);
+      pollJobs(2000);
+    } else if (prevJob && !currentJob) {
       console.log("Job completed, refreshing files...");
       setRefreshTrigger(p => p + 1);
+      pollJobs(2000);
     }
-    
+
     prevJobRef.current = currentJob;
-  }, [jobStatus.current]);
+  }, [jobStatus.current, pollJobs]);
 
   // Handle browser back/forward buttons
   useEffect(() => {
@@ -127,24 +131,27 @@ function App() {
       window.history.back();
   };
 
-  const refreshData = () => {
+  const refreshData = useCallback(() => {
     setRefreshTrigger(prev => prev + 1);
     // Restart polling with a short 2-second delay to catch the new job status
     pollJobs(2000);
-  };
+  }, [pollJobs]);
 
   const handleMetadataRefresh = useCallback(async () => {
     setIsRefreshingMetadata(true);
     try {
       await fetch(`${API_BASE}/files/refresh_metadata`, { method: 'POST' });
-      setRefreshTrigger(prev => prev + 1);
-      pollJobs(2000);
+      refreshData();
     } catch (err) {
       console.error("Metadata refresh failed:", err);
     } finally {
       setIsRefreshingMetadata(false);
     }
-  }, [pollJobs]);
+  }, [refreshData]);
+
+  const handleConfigChange = useCallback(() => {
+    handleMetadataRefresh();
+  }, [handleMetadataRefresh]);
 
   return (
     <div className={`app-container ${selectedFile ? 'has-selection' : ''}`}>
@@ -205,6 +212,7 @@ function App() {
                 <ListsTab 
                   apiBase={API_BASE}
                   onUpdate={refreshData}
+                  onGlobalConfigChange={handleConfigChange}
                 />
               )}
               {activeTab === 'rules' && (
@@ -218,6 +226,7 @@ function App() {
                   file={selectedFile}
                   apiBase={API_BASE}
                   onUpdate={refreshData}
+                  onGlobalConfigChange={handleConfigChange}
                 />
               )}
             </div>
