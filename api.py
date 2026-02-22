@@ -43,7 +43,7 @@ CONFIG_DIR = "config"
 
 STATS_FILE = os.path.abspath(os.path.join(CONFIG_DIR, "stats.json"))
 
-AUDIO_EXTENSIONS = ["*.mp3", "*.opus", "*.flac", "*.wav", "*.m4a"]
+AUDIO_EXTENSIONS = ["*.mp3", "*.opus", "*.flac", "*.wav", "*.m4a", "*.m4b"]
 
 # Ensure directories exist
 for d in [INPUT_DIR, OUTPUT_DIR, TRANSCRIPT_DIR, CONFIG_DIR]:
