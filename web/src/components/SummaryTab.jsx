@@ -153,7 +153,7 @@ function SummaryTab({ file, apiBase, onUpdate, jobStatus, isRefreshingMetadata }
             disabled={loading || anyJobRunning || file.transcribed}
         >
             <div>
-                <div className="stat-label">Duration</div>
+                <div className="stat-label">Book Duration</div>
                 <div className="stat-value">{file.duration ? getTimeStr(file.duration) : "Unknown"}</div>
             </div>
             {!file.transcribed && (
@@ -178,7 +178,7 @@ function SummaryTab({ file, apiBase, onUpdate, jobStatus, isRefreshingMetadata }
                     <div className="stat-value" style={{fontSize: '1.2rem'}}>
                         {isThisFileBusy ? 'In Progress...' : 'Start Transcription'}
                         <div style={{fontSize: '0.8rem', color: 'var(--text-secondary)', fontWeight: 'normal', marginTop: 4}}>
-                            (~{getTimeStr(file.est_transcribe_duration)})
+                            Estimated runtime: {getTimeStr(file.est_transcribe_duration)}
                         </div>
                     </div>
                 )}
@@ -205,7 +205,7 @@ function SummaryTab({ file, apiBase, onUpdate, jobStatus, isRefreshingMetadata }
                     <div className="stat-value" style={{fontSize: '1.2rem'}}>
                         {isThisFileBusy ? 'In Progress...' : (file.is_out_of_date ? "Regenerate" : "Start Censoring")}
                         <div style={{fontSize: '0.8rem', color: (file.is_out_of_date ? 'var(--warning)' : 'var(--text-secondary)'), fontWeight: 'normal', marginTop: 4}}>
-                            ~{getTimeStr(file.est_censor_duration)} 
+                            Estimated runtime: {getTimeStr(file.est_censor_duration)} 
                             {file.is_out_of_date ? " (Out of Date)" : ""}
                         </div>
                     </div>
