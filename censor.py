@@ -9,6 +9,7 @@ import time
 import json
 import math
 import tempfile
+import uuid
 from datetime import timedelta
 
 # ---------------------------------------------------------------------
@@ -235,23 +236,14 @@ class AudiobookCensor:
         startTime = time.time()
         print(f"→ Transcribing {input_path} with vosk...")
 
-        # BUG WORKAROUND: vosk-transcriber has a bug where it fails if the input path
-        # contains single quotes, because it improperly uses shlex.split on a string
-        # it already wrapped in single quotes.
-        # We work around this by creating a temporary symlink with a "safe" name.
-        actual_input_path = input_path
-        temp_symlink = None
-        if "'" in input_path:
-            temp_ext = os.path.splitext(input_path)[1]
-            temp_symlink = os.path.join(os.path.dirname(input_path), f"tmp_transcribe_{hash(input_path)}{temp_ext}")
-            if os.path.exists(temp_symlink):
-                os.remove(temp_symlink)
-            os.symlink(os.path.abspath(input_path), temp_symlink)
-            actual_input_path = temp_symlink
-
+        symlink_target = os.path.join(tempfile.gettempdir(), f"tmp_transcribe_{os.path.splitext(input_path)[1]}")
         try:
+            if os.path.exists(symlink_target):
+                os.remove(symlink_target)
+            os.symlink(os.path.abspath(input_path), symlink_target)
+
             cmd = [
-                "vosk-transcriber", "-i", actual_input_path, "-t", "json", "-o", output_json
+                "vosk-transcriber", "-i", symlink_target, "-t", "json", "-o", output_json
             ]
             
             model_path = os.environ.get("VOSK_MODEL_PATH")
@@ -259,9 +251,11 @@ class AudiobookCensor:
                 cmd.extend(["-m", model_path])
                 
             self.run_cmd(cmd)
+        except OSError as exc:
+            print(f"→ Warning: could not create vosk temp symlink: {exc}")
         finally:
-            if temp_symlink and os.path.exists(temp_symlink):
-                os.remove(temp_symlink)
+            if symlink_target and os.path.exists(symlink_target):
+                os.remove(symlink_target)
 
         self.cleanup_transcript(output_json)
 
@@ -449,4 +443,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
