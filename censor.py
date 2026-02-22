@@ -236,8 +236,12 @@ class AudiobookCensor:
         startTime = time.time()
         print(f"→ Transcribing {input_path} with vosk...")
 
-        symlink_target = os.path.join(tempfile.gettempdir(), f"tmp_transcribe_{os.path.splitext(input_path)[1]}")
+        symlink_target = None
         try:
+            suffix = os.path.splitext(input_path)[1]
+            with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
+                symlink_target = tmp.name
+
             if os.path.exists(symlink_target):
                 os.remove(symlink_target)
             os.symlink(os.path.abspath(input_path), symlink_target)
@@ -257,7 +261,8 @@ class AudiobookCensor:
             if symlink_target and os.path.exists(symlink_target):
                 os.remove(symlink_target)
 
-        self.cleanup_transcript(output_json)
+        if os.path.exists(output_json):
+            self.cleanup_transcript(output_json)
 
         print(f"→ Transcription completed in {time.time() - startTime:.2f} seconds.")
         return output_json
