@@ -8,6 +8,14 @@ This process is *not* 100% accurate and will not catch all words, but catches a 
 
 FYI, the frontend was entirely written by AI, so use at your own risk. The original backend was also modified as a result of this to make it function better with the frontend.
 
+## AI Disclaimer
+
+This started out as a collection of scripts I wrote to perform this same task, but then vibe-coded a front end just to give myself pretty buttons. As I've found little changes I want to make, I have been using coding agents to do all of the work and I have not reviewed the code beyond a cursory inspection.
+
+It does not include any authentication. I only use it through a read-only mount to my media files over my local network.
+
+Use at your own risk.
+
 ## General usage
 
 Put audio files into the `input/` folder. Once an audio file is transcribed, the transcription will stick around because the input audio file will not change. If you change the input file and keep it with the same name, you need to manually clear out the transcription logs in `transcripts/`. Masked (censored) files are written to `output/`.
