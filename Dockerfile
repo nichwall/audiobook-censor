@@ -85,8 +85,6 @@ touch /app/config/api.log\n\
 python -m uvicorn api:app --host 0.0.0.0 --port $PORT 2>&1 | tee /app/config/api.log\n\
 ' > /app/start.sh && chmod +x /app/start.sh && chown appuser:appuser /app/start.sh
 
-USER appuser
-
 EXPOSE ${PORT}
 
 CMD ["/app/start.sh"]
